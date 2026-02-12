@@ -1,1 +1,1 @@
-Once we get them, thsi is where our results will be collected
+Once we get them, this is where our results will be collected
