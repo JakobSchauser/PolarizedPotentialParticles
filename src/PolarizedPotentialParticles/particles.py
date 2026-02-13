@@ -2,7 +2,7 @@ import torch
 from configs import ParticleConfig
 from torch_geometric.nn import conv
 from torch_geometric.nn.models import MLP
-
+from custom_conv import CustomNNConv
 
 
 class Particle(torch.nn.Module):
@@ -16,7 +16,6 @@ class Particle(torch.nn.Module):
 		self.x : torch.Tensor | None = None
 		self.message_conv : torch.nn.Module | None = None
 		self.own_state_nn : torch.nn.Module | None = None
-
 
 		self.setup()
 
@@ -32,8 +31,7 @@ class Particle(torch.nn.Module):
 
 	def initialize_architecture(self):
 		# Message NN
-		mlp = MLP(in_channels=self.state_dim, hidden_channels=32, out_channels=self.state_dim * self.config.message_out_channels, num_layers=3)
-		self.message_conv = conv.NNConv(in_channels=self.state_dim, out_channels=self.config.message_out_channels, nn=mlp)
+		self.message_conv = CustomNNConv(self.config)
 
 		# own state NN
 		total_channels = self.state_dim + self.config.message_out_channels
@@ -47,8 +45,6 @@ class Particle(torch.nn.Module):
 
 		# dist = 
 
-		
-		# rel_ij =  Dist_ij, dot(pi,pj), dot(qi, qj), dot(r_ij, pi), dot(r_ij, qi), hidden_j - hidden_i, hidden_j, hidden_i    # dim = 1 + 2 + 2 + 3*n_hidden_dim
 
 		# return x_transformed
 
@@ -59,10 +55,9 @@ class Particle(torch.nn.Module):
 		# x: [num_nodes, state_channels]
 		# edge_index: [2, num_edges]
 
-		message_x = self.preprocess_state(x, edge_index)
 
 		# Compute messages
-		messages = self.message_conv(message_x, edge_index)  # [num_nodes, out_channels]
+		messages = self.message_conv(x, edge_index)  # [num_nodes, out_channels]
 
 		# Concatenate own state with messages
 		combined = torch.cat([x, messages], dim=-1)  # [num_nodes, state_channels + out_channels]
