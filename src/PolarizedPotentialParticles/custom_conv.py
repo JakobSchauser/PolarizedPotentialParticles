@@ -40,6 +40,10 @@ class CustomNNConv(MessagePassing):
 
         self.reset_parameters()
 
+        # zero the learnable parameters of the final linear layer
+        zeros(self.lin[-1].weight)
+        zeros(self.lin[-1].bias)
+
         self.aggr = 'add'  # or 'mean', 'max', etc. 
 
     def reset_parameters(self):

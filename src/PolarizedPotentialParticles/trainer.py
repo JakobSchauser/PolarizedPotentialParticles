@@ -8,7 +8,6 @@ class Trainer:
     def __init__(self, config : Config):
         self.config = config
         self.particle_system = Particle(config)
-        self.x = torch.zeros((self.config.N_particles, self.config.particle_dim))  # [num_nodes, state_channels]
 
         self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.001)
         self.learning_steps = 0
@@ -26,13 +25,19 @@ class Trainer:
         # Compute your loss here based on the output and the target
         loss = torch.nn.MSELoss()(output, target)
         return loss
-
+    
+    def get_initial_state(self):
+        x = torch.zeros((self.config.N_particles, self.config.particle_dim))  # [num_nodes, state_channels]
+        x[:, :self.config.N_spatial_dim] = torch.rand((self.config.N_particles, self.config.N_spatial_dim))  # Random initial positions
+        return x
 
     def train(self, optim_steps):
+        x = self.get_initial_state()  # Initialize the state of the system
+
         edge_index = self.get_nbs()  # [2, num_edges]
 
         # Forward pass
-        output = self.particle_system(self.x, edge_index, steps = optim_steps)  # [num_nodes, out_dim]
+        output = self.particle_system(x, edge_index, steps = optim_steps)  # [num_nodes, out_dim]
 
 
         # Here you would compute your loss and perform backpropagation
