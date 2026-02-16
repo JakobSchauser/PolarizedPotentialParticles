@@ -1,69 +1,98 @@
 import torch
-from configs import ParticleConfig
+from configs import Config
 from torch_geometric.nn import conv
 from torch_geometric.nn.models import MLP
 from custom_conv import CustomNNConv
 
 
 class Particle(torch.nn.Module):
-	def __init__(self, config : ParticleConfig):
-		super().__init__()
-		self.config = config
+    def __init__(self, config : Config):
+        super().__init__()
+        self.config = config
 
-		self.state_dim = config.N_spatial_dim + 2 * config.N_polarizations + config.hidden_dim
-		
-		
-		self.x : torch.Tensor | None = None
-		self.message_conv : torch.nn.Module | None = None
-		self.own_state_nn : torch.nn.Module | None = None
+        
+        self.message_conv : torch.nn.Module | None = None
+        self.own_state_nn : torch.nn.Module | None = None
 
-		self.setup()
+        self.setup()
 
 
-	def setup(self):
-		self.initialize_state()
-		self.initialize_architecture()
+
+    def setup(self):
+        self.initialize_architecture()
+
+    def initialize_architecture(self):
+        # Message NN
+        self.message_conv = CustomNNConv(self.config.particle_config)
+
+    def update(self, output, x):
+        # assert self.x is not None
+
+        # output: [num_nodes, out_dim]
+        # We need to parse the output into position updates, polarization updates, and hidden state updates
+
+        # [dx, dy, dpol_x, dpol_y, d_hidden1, d_hidden2, ...]
+        dx = output[:, 0]  # [num_nodes]
+        dy = output[:, 1]  # [num_nodes]
+        dpol_x = output[:, 2]  # [num_nodes]
+        dpol_y = output[:, 3]  # [num_nodes]
+        d_hidden = output[:, 4:]  # [num_nodes, hidden_dim]
+
+        dt = self.config.simulation_config.dt
+        # Update positions and polarizations
+        x[:, :self.config.N_spatial_dim] += torch.stack((dx, dy), dim=1) * dt
+        x[:, self.config.N_spatial_dim:self.config.N_spatial_dim + 2 * self.config.N_polarizations] += torch.stack((dpol_x, dpol_y), dim=1) * dt
+        x[:, self.config.N_spatial_dim + 2 * self.config.N_polarizations:] += d_hidden * dt
+
+        return x
+    
+    def message_to_output(self, message):
+        # message: [num_nodes, message_out_channels]
+        # output: [num_nodes, out_dim]
+
+        out = torch.nn.Linear(self.config.particle_config.message_out_channels, self.config.particle_config.out_dim)(message)  # [num_nodes, out_dim]
+
+        return out 
+
+    def forward(self, x, edge_index, steps):
+        assert self.message_conv is not None and self.own_state_nn is not None
+        # x: [num_nodes, state_channels]
+        # edge_index: [2, num_edges]
 
 
-	def initialize_state(self):
-		self.x = torch.zeros((self.config.N_particles, self.state_dim))  # [num_nodes, state_channels]
+        for s in range(steps):
+            # Compute messages
+            messages = self.message_conv(x, edge_index)  # [num_nodes, out_channels]
+
+            # Update own state
+            output = self.message_to_output(messages)  # [num_nodes, out_dim]
+            self.update(output, x)
+
+        return output
+
+    @staticmethod
+    def atomize_state(x, config : Config):
+        # x: [num_nodes, state_channels]
+
+        pos = x[:, :config.N_spatial_dim]  # [num_nodes, N_spatial_dim]
+        
+        pols = []
+        for i in range(config.N_polarizations):
+            pol_i = x[:, config.N_spatial_dim + 2 * i : config.N_spatial_dim + 2 * (i + 1)]  # [num_nodes, 2]
+            pols.append(pol_i) 
+
+        hidden = x[:, config.N_spatial_dim + 2 * config.N_polarizations:]  # [num_nodes, hidden_dim]
+
+        return pos, pols, hidden
+    
 
 
-	def initialize_architecture(self):
-		# Message NN
-		self.message_conv = CustomNNConv(self.config)
+# class ParticleSystem(torch.nn.Module):
+# 	def __init__(self, config : ParticleConfig):
+# 		super().__init__()
+# 		self.config = config
 
-		# own state NN
-		total_channels = self.state_dim + self.config.message_out_channels
-		self.own_state_nn = MLP(in_channels=total_channels, hidden_channels=32, out_channels=self.state_dim, num_layers=3)
+# 		self.particles = Particle(config)
 
-
-	def preprocess_state(self, x, edge_index):
-		# x.shape: [num_nodes, state_channels]
-
-		# state: N_spatial_dim + 2 * N_polarizations + hidden_dim
-
-		# dist = 
-
-
-		# return x_transformed
-
-		return x
-
-	def forward(self, x, edge_index):
-		assert self.message_conv is not None and self.own_state_nn is not None
-		# x: [num_nodes, state_channels]
-		# edge_index: [2, num_edges]
-
-
-		# Compute messages
-		messages = self.message_conv(x, edge_index)  # [num_nodes, out_channels]
-
-		# Concatenate own state with messages
-		combined = torch.cat([x, messages], dim=-1)  # [num_nodes, state_channels + out_channels]
-
-		# Update own state
-		new_state = self.own_state_nn(combined)  # [num_nodes, state_channels]
-
-		return new_state
-
+# 	def forward(self, x, edge_index):
+# 		return self.particles(x, edge_index)

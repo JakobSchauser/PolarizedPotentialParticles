@@ -1,15 +1,34 @@
 from dataclasses import dataclass
 
 
+
+
+@dataclass
+class SimulationConfig:
+    dt : float = 0.01
+    steps : int = 50
+
+
 @dataclass
 class ParticleConfig:
+    hidden_dim : int = 16
+    message_out_channels : int = 8
+
+    out_dim : int = 2 + 2 * 1 + 16  # dx, dy, dpol_x, dpol_y, d_hidden1...
+
+    zero_initialization : bool = False
+
+
+    
+
+@dataclass
+class Config:
+    particle_config : ParticleConfig
+    simulation_config : SimulationConfig
+
     N_spatial_dim : int = 2
     N_polarizations : int = 1
     N_particles : int = 100
-    hidden_dim : int = 16
-    message_out_channels : int = 16
-    out_dim : int = 3
-    zero_initialization : bool = False
 
     @property
     def message_channels(self) -> int:
@@ -26,9 +45,13 @@ class ParticleConfig:
         #
         #           # dim = 1 + 2 + 2 + 3*n_hidden_dim
 
-        return 1 + 2 * self.N_polarizations + 2 * self.N_polarizations + 2 * self.hidden_dim
+        return 1 + 2 * self.N_polarizations + 2 * self.N_polarizations + 2 * self.particle_config.hidden_dim
     
     @property
     def state_dim(self) -> int:
         # state: polarizations + hidden_dims
-        return self.N_spatial_dim * self.N_polarizations + self.hidden_dim
+        return self.N_spatial_dim * self.N_polarizations + self.particle_config.hidden_dim
+    
+    @property
+    def particle_dim(self) -> int:
+        return self.N_spatial_dim + 2 * self.N_polarizations + self.particle_config.hidden_dim
