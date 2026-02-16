@@ -1,8 +1,8 @@
+from polarizedpotentialparticles.configs import Config
+from polarizedpotentialparticles.custom_conv import CustomNNConv
 import torch
-from configs import Config
 from torch_geometric.nn import conv
 from torch_geometric.nn.models import MLP
-from custom_conv import CustomNNConv
 
 
 class Particle(torch.nn.Module):
@@ -30,19 +30,20 @@ class Particle(torch.nn.Module):
 
         # output: [num_nodes, out_dim]
         # We need to parse the output into position updates, polarization updates, and hidden state updates
+        # # [dx, dy, dpol_x, dpol_y, d_hidden1, d_hidden2, ...]
+        # dx = output[:, 0]  # [num_nodes]
+        # dy = output[:, 1]  # [num_nodes]
+        # dpol_x = output[:, 2]  # [num_nodes]
+        # dpol_y = output[:, 3]  # [num_nodes]
+        # d_hidden = output[:, 4:]  # [num_nodes, hidden_dim]
 
-        # [dx, dy, dpol_x, dpol_y, d_hidden1, d_hidden2, ...]
-        dx = output[:, 0]  # [num_nodes]
-        dy = output[:, 1]  # [num_nodes]
-        dpol_x = output[:, 2]  # [num_nodes]
-        dpol_y = output[:, 3]  # [num_nodes]
-        d_hidden = output[:, 4:]  # [num_nodes, hidden_dim]
+        # dt = self.config.simulation_config.dt
+        # # Update positions and polarizations
+        # x[:, :self.config.N_spatial_dim] += torch.stack((dx, dy), dim=1) * dt
+        # x[:, self.config.N_spatial_dim:self.config.N_spatial_dim + 2 * self.config.N_polarizations] += torch.stack((dpol_x, dpol_y), dim=1) * dt
+        # x[:, self.config.N_spatial_dim + 2 * self.config.N_polarizations:] += d_hidden * dt
 
-        dt = self.config.simulation_config.dt
-        # Update positions and polarizations
-        x[:, :self.config.N_spatial_dim] += torch.stack((dx, dy), dim=1) * dt
-        x[:, self.config.N_spatial_dim:self.config.N_spatial_dim + 2 * self.config.N_polarizations] += torch.stack((dpol_x, dpol_y), dim=1) * dt
-        x[:, self.config.N_spatial_dim + 2 * self.config.N_polarizations:] += d_hidden * dt
+        x = x + output*self.config.simulation_config.dt  # This is a simple Euler update; you can replace it with a more sophisticated integrator if needed
 
         return x
     
@@ -55,7 +56,7 @@ class Particle(torch.nn.Module):
         return out 
 
     def forward(self, x, edge_index, steps):
-        assert self.message_conv is not None and self.own_state_nn is not None
+        assert self.message_conv is not None 
         # x: [num_nodes, state_channels]
         # edge_index: [2, num_edges]
 
@@ -71,21 +72,6 @@ class Particle(torch.nn.Module):
 
         return x
 
-    @staticmethod
-    def atomize_state(x, config : Config):
-        # x: [num_nodes, state_channels]
-
-        pos = x[:, :config.N_spatial_dim]  # [num_nodes, N_spatial_dim]
-        
-        pols = []
-        for i in range(config.N_polarizations):
-            pol_i = x[:, config.N_spatial_dim + 2 * i : config.N_spatial_dim + 2 * (i + 1)]  # [num_nodes, 2]
-            pols.append(pol_i) 
-
-        hidden = x[:, config.N_spatial_dim + 2 * config.N_polarizations:]  # [num_nodes, hidden_dim]
-
-        return pos, pols, hidden
-    
 
 
 # class ParticleSystem(torch.nn.Module):

@@ -1,5 +1,7 @@
-from particles import Particle
-from configs import Config
+from polarizedpotentialparticles.particles import Particle
+from polarizedpotentialparticles.configs import Config
+from polarizedpotentialparticles.losses import compute_loss
+
 import torch
 
 class Trainer:
@@ -7,8 +9,6 @@ class Trainer:
         self.config = config
         self.particle_system = Particle(config)
         self.x = torch.zeros((self.config.N_particles, self.config.particle_dim))  # [num_nodes, state_channels]
-
-        self.steps = 50
 
         self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.001)
         self.learning_steps = 0
@@ -28,15 +28,15 @@ class Trainer:
         return loss
 
 
-    def train(self):
+    def train(self, optim_steps):
         edge_index = self.get_nbs()  # [2, num_edges]
 
         # Forward pass
-        output = self.particle_system(self.x, edge_index, steps = self.steps)  # [num_nodes, out_dim]
+        output = self.particle_system(self.x, edge_index, steps = optim_steps)  # [num_nodes, out_dim]
 
 
         # Here you would compute your loss and perform backpropagation
-        loss = self.loss_fn(output, target)  # Compute your loss here
+        loss = compute_loss(output)  # Compute your loss here
         # Update your model parameters here
         
         if torch.is_grad_enabled():

@@ -14,7 +14,7 @@ class ParticleConfig:
     hidden_dim : int = 16
     message_out_channels : int = 8
 
-    out_dim : int = 2 + 2 * 1 + 16  # dx, dy, dpol_x, dpol_y, d_hidden1...
+    out_dim : int = 2 + 2 * 2 + 16  # dx, dy, dpol_x, dpol_y, d_hidden1...
 
     zero_initialization : bool = False
 
@@ -27,7 +27,7 @@ class Config:
     simulation_config : SimulationConfig
 
     N_spatial_dim : int = 2
-    N_polarizations : int = 1
+    N_polarizations : int = 2
     N_particles : int = 100
 
     @property
@@ -43,9 +43,9 @@ class Config:
         #           hidden_j - hidden_i, 
         #           hidden_j, 
         #
-        #           # dim = 1 + 2 + 2 + 3*n_hidden_dim
+        #           # dim = 1 + 2 + 2 + 2*n_hidden_dim
 
-        return 1 + 2 * self.N_polarizations + 2 * self.N_polarizations + 2 * self.particle_config.hidden_dim
+        return 1 + self.N_polarizations + self.N_polarizations + 2 * self.particle_config.hidden_dim
     
     @property
     def state_dim(self) -> int:

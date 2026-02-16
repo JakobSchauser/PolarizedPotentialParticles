@@ -1,7 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "polarizedpotentialparticles"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "jupyter>=1.1.1",
+    "panel>=1.8.7",
+    "torch>=2.10.0",
+    "torch-geometric>=2.7.0",
+    "torchvision>=0.25.0",
+]
+
+[tool.hatch.build]
+sources = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/polarizedpotentialparticles"]

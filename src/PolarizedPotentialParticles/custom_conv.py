@@ -7,8 +7,9 @@ from torch_geometric.typing import Adj, OptPairTensor, OptTensor, Size
 from typing import Callable, Tuple, Union
 from torch import Tensor
 from torch.nn import Parameter
-from configs import Config
-from particles import Particle
+
+from polarizedpotentialparticles.configs import Config
+from polarizedpotentialparticles.utils import atomize_state
 
 class CustomNNConv(MessagePassing):
     def __init__(self, config : Config):
@@ -59,11 +60,11 @@ class CustomNNConv(MessagePassing):
         #           hidden_j - hidden_i, 
         #           hidden_j, 
         #
-        #           # dim = 1 + 2 + 2 + 3*n_hidden_dim
+        #           # dim = 1 + 2 + 2 + 2*n_hidden_dim
 
+        pos_i, pol_i, hidden_i = atomize_state(x_i, self.config)
+        pos_j, pol_j, hidden_j = atomize_state(x_j, self.config)
 
-        pos_i, pol_i, hidden_i = Particle.atomize_state(x_i, self.config)
-        pos_j, pol_j, hidden_j = Particle.atomize_state(x_j, self.config)
 
         r_ij = pos_j - pos_i  # [num_edges, N_spatial_dim]
         dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
@@ -75,9 +76,10 @@ class CustomNNConv(MessagePassing):
         dot_rij_pi = torch.sum(r_ij * pol_i[0], dim=-1, keepdim=True)  # [num_edges, 1]
         dot_rij_qi = torch.sum(r_ij * pol_i[1], dim=-1, keepdim=True)  # [num_edges, 1]
 
+
         hidden_diff = hidden_j - hidden_i  # [num_edges, hidden_dim]
 
-        edge_attr = torch.cat([dist_ij, dot_pi_pj, dot_qi_qj, dot_rij_pi, dot_rij_qi, hidden_diff, hidden_j], dim=-1)  # [num_edges, 1 + 2 + 2 + 2 + hidden_dim + hidden_dim]
+        edge_attr = torch.cat([dist_ij, dot_pi_pj, dot_qi_qj, dot_rij_pi, dot_rij_qi, hidden_diff, hidden_j], dim=-1)  # [num_edges, 1 + 2 + 2  + 2* hidden_dim]
 
         return edge_attr
 
@@ -101,7 +103,6 @@ class CustomNNConv(MessagePassing):
         # x_i, x_j: [num_edges, state_channels]
 
         edge_attr = self.make_msg(x_i, x_j)
-
         conv = self.nn(edge_attr)
 
         return conv
