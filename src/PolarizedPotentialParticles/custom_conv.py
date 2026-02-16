@@ -7,11 +7,11 @@ from torch_geometric.typing import Adj, OptPairTensor, OptTensor, Size
 from typing import Callable, Tuple, Union
 from torch import Tensor
 from torch.nn import Parameter
-from configs import ParticleConfig
+from configs import Config
 from particles import Particle
 
 class CustomNNConv(MessagePassing):
-    def __init__(self, config : ParticleConfig):
+    def __init__(self, config : Config):
         super().__init__()
 
         self.config = config
@@ -20,7 +20,7 @@ class CustomNNConv(MessagePassing):
         state_channels = config.state_dim
 
 
-        out_channels = config.message_out_channels
+        out_channels = config.particle_config.message_out_channels
 
 
         mlp1 = []
@@ -29,7 +29,6 @@ class CustomNNConv(MessagePassing):
         mlp1.append(Linear(32, state_channels)) # arrnitratry size, but why not 
         
         self.nn = torch.nn.Sequential(*mlp1)
-
 
         mlp2 = []
         mlp2.append(Linear(state_channels + state_channels, 32))
@@ -94,14 +93,8 @@ class CustomNNConv(MessagePassing):
         
         # x.shape = [num_nodes, state_channels]
 
-        x_for_propagate = (x, x)
-
         # propagate calls message, aggr and update in order.
-        out = self.propagate(edge_index, x=x_for_propagate) # [num_nodes, out_channels]
-
-        # out.shape = [num_nodes, out_channels]
-
-        return out
+        return self.propagate(edge_index, x=x) # [num_nodes, out_channels]
 
 
     def message(self, x_i : Tensor, x_j: Tensor) -> Tensor:
@@ -117,6 +110,9 @@ class CustomNNConv(MessagePassing):
 
 
     def update(self, aggr_out: Tensor, x : Tensor) -> Tensor:
-        out = torch.cat([x, aggr_out], dim=-1)
+
+        x_no_spatial = x[:, self.config.N_spatial_dim:]  # [num_nodes, state_channels]
+
+        out = torch.cat([x_no_spatial, aggr_out], dim=-1)
         out = self.lin(out)
         return out

@@ -54,4 +54,4 @@ class Config:
     
     @property
     def particle_dim(self) -> int:
-        return self.N_spatial_dim + 2 * self.N_polarizations + self.particle_config.hidden_dim
+        return self.N_spatial_dim + self.state_dim

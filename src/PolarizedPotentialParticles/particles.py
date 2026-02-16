@@ -23,7 +23,7 @@ class Particle(torch.nn.Module):
 
     def initialize_architecture(self):
         # Message NN
-        self.message_conv = CustomNNConv(self.config.particle_config)
+        self.message_conv = CustomNNConv(self.config)
 
     def update(self, output, x):
         # assert self.x is not None
@@ -66,9 +66,10 @@ class Particle(torch.nn.Module):
 
             # Update own state
             output = self.message_to_output(messages)  # [num_nodes, out_dim]
-            self.update(output, x)
+            x = self.update(output, x)
 
-        return output
+
+        return x
 
     @staticmethod
     def atomize_state(x, config : Config):
