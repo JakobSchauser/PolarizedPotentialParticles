@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass
 class SimulationConfig:
-    dt : float = 0.01
+    dt : float = 0.1
     steps : int = 50
 
 
@@ -14,9 +14,9 @@ class ParticleConfig:
     hidden_dim : int = 16
     message_out_channels : int = 8
 
-    out_dim : int = 2 + 2 * 2 + 16  # dx, dy, dpol_x, dpol_y, d_hidden1...
+    out_dim : int = 2 + 2 * 1 + 16  # dx, dy, dpol_x, dpol_y, d_hidden1...
 
-    zero_initialization : bool = False
+    zero_initialization : bool = True
 
 
     
@@ -27,8 +27,10 @@ class Config:
     simulation_config : SimulationConfig
 
     N_spatial_dim : int = 2
-    N_polarizations : int = 2
+    N_polarizations : int = 1
     N_particles : int = 100
+
+    neighbor_radius : float = 1.0
 
     @property
     def message_channels(self) -> int:

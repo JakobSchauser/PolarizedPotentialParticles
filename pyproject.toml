@@ -9,10 +9,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "bokeh>=3.8.2",
     "jupyter>=1.1.1",
+    "jupyter-bokeh>=4.0.5",
     "matplotlib>=3.10.8",
     "panel>=1.8.7",
     "torch>=2.10.0",
+    "torch-cluster>=1.6.3",
     "torch-geometric>=2.7.0",
     "torchvision>=0.25.0",
 ]

@@ -41,8 +41,9 @@ class CustomNNConv(MessagePassing):
         self.reset_parameters()
 
         # zero the learnable parameters of the final linear layer
-        zeros(self.lin[-1].weight)
-        zeros(self.lin[-1].bias)
+        if self.config.particle_config.zero_initialization:
+            zeros(self.lin[-1].weight)
+            zeros(self.lin[-1].bias)
 
         self.aggr = 'add'  # or 'mean', 'max', etc. 
 
@@ -74,16 +75,16 @@ class CustomNNConv(MessagePassing):
         dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
 
         dot_pi_pj = torch.sum(pol_i[0] * pol_j[0], dim=-1, keepdim=True)  # [num_edges, 1]
-        dot_qi_qj = torch.sum(pol_i[1] * pol_j[1], dim=-1, keepdim=True)  # [num_edges, 1]
+        # dot_qi_qj = torch.sum(pol_i[1] * pol_j[1], dim=-1, keepdim=True)  # [num_edges, 1]
 
 
         dot_rij_pi = torch.sum(r_ij * pol_i[0], dim=-1, keepdim=True)  # [num_edges, 1]
-        dot_rij_qi = torch.sum(r_ij * pol_i[1], dim=-1, keepdim=True)  # [num_edges, 1]
+        # dot_rij_qi = torch.sum(r_ij * pol_i[1], dim=-1, keepdim=True)  # [num_edges, 1]
 
 
         hidden_diff = hidden_j - hidden_i  # [num_edges, hidden_dim]
 
-        edge_attr = torch.cat([dist_ij, dot_pi_pj, dot_qi_qj, dot_rij_pi, dot_rij_qi, hidden_diff, hidden_j], dim=-1)  # [num_edges, 1 + 2 + 2  + 2* hidden_dim]
+        edge_attr = torch.cat([dist_ij, dot_pi_pj, dot_rij_pi, hidden_diff, hidden_j], dim=-1)  # [num_edges, 1 + 2 + 2  + 2* hidden_dim]
 
         return edge_attr
 

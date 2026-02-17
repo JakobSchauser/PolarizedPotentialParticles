@@ -1,6 +1,7 @@
 from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.custom_conv import CustomNNConv
 import torch
+import torch.nn.functional as F
 from torch_geometric.nn import conv
 from torch_geometric.nn.models import MLP
 
@@ -43,7 +44,16 @@ class Particle(torch.nn.Module):
         # x[:, self.config.N_spatial_dim:self.config.N_spatial_dim + 2 * self.config.N_polarizations] += torch.stack((dpol_x, dpol_y), dim=1) * dt
         # x[:, self.config.N_spatial_dim + 2 * self.config.N_polarizations:] += d_hidden * dt
 
-        x = x + output*self.config.simulation_config.dt  # This is a simple Euler update; you can replace it with a more sophisticated integrator if needed
+        x = x + output * self.config.simulation_config.dt  # Euler update
+
+        # normalize the polarization block to unit length without in-place slicing (keeps autograd happy)
+        start = self.config.N_spatial_dim
+        end = start + 2 * self.config.N_polarizations
+        pol = x[:, start:end]
+        pol = F.normalize(pol, p=2, dim=1, eps=1e-8)
+
+        # rebuild x to avoid in-place grad issues on a view
+        x = torch.cat((x[:, :start], pol, x[:, end:]), dim=1)
 
         return x
     
