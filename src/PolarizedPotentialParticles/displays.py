@@ -60,7 +60,9 @@ class Displayer:
         # Plot every ten frames of the particles
         fig, ax = plt.subplots(figsize=(6, 6))
         num_frames = len(range(0, len(rollout), 10))
-        for i, frame_idx in enumerate(range(0, len(rollout), 10)):
+
+        rang = list(range(0, len(rollout), 10))
+        for i, frame_idx in enumerate(rang):
             frame = self._state_for_display(rollout[frame_idx])
             pos = frame[:, :2]  # Get the positions for the current frame
 
@@ -70,7 +72,7 @@ class Displayer:
             ax.scatter(pos[:, 0], pos[:, 1], s=100, alpha=0.5, c=[color])  # Plot the positions
 
             # Plot the polarization vectors as arrows if first or last frame
-            if not (i == 0 or i == num_frames - 1):
+            if not (i == 0 or i == len(rang) - 1):
                 continue
             for j in range(pos.shape[0]):
                 ax.arrow(pos[j, 0], pos[j, 1], polarity[j, 0]*0.05, polarity[j, 1]*0.05, head_width=0.02, head_length=0.02, fc='r', ec='r')
