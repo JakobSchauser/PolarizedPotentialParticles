@@ -9,9 +9,12 @@ def atomize_state(x, config : Config):
     
     pols = []
     for i in range(config.N_polarizations):
-        pol_i = x[:, config.N_spatial_dim + config.N_spatial_dim * i : config.N_spatial_dim + config.N_spatial_dim * (i + 1)]  # [num_nodes, 2]
-        pols.append(pol_i) 
+        start = config.N_spatial_dim + config.N_spatial_dim * i
+        end = start + config.N_spatial_dim
+        pol_i = x[:, start:end]  # [num_nodes, 2]
+        pols.append(pol_i)
 
-    hidden = x[:, config.N_spatial_dim + config.N_spatial_dim * (i + 1):]  # [num_nodes, hidden_dim]
+    hidden_start = config.N_spatial_dim + config.N_spatial_dim * config.N_polarizations
+    hidden = x[:, hidden_start:]  # [num_nodes, hidden_dim]
 
     return pos, pols, hidden

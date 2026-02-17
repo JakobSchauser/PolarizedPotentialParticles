@@ -16,9 +16,14 @@ class Trainer:
 
         self.history = []  # to store training history (e.g., losses)
 
-    def get_nbs(self, x):
-        # get all particles within a certain radius as neighbors
-        edge_index = radius_graph(x[:, :self.config.N_spatial_dim], r=self.config.neighbor_radius, loop=False)  # [2, num_edges]
+    def get_nbs(self, x, batch):
+        # get all particles within a certain radius as neighbors per graph in the batch
+        edge_index = radius_graph(
+            x[:, :self.config.N_spatial_dim],
+            r=self.config.neighbor_radius,
+            loop=False,
+            batch=batch,
+        )  # [2, num_edges]
         return edge_index
 
     def loss_fn(self, output, target):
@@ -27,11 +32,13 @@ class Trainer:
         return loss
     
     def get_initial_state(self):
-        x = 2.*torch.rand((self.config.N_particles, self.config.particle_dim)) - 1.  # [num_nodes, state_channels]
-        x[:, :self.config.N_spatial_dim] *= 10.
+        batch_size = self.config.simulation_config.batch_size
+        num_nodes = batch_size * self.config.N_particles
 
+        x = 2. * torch.rand((num_nodes, self.config.particle_dim)) - 1.  # [B*N, state_channels]
+        x[:, :self.config.N_spatial_dim] *= 2.
 
-        
+        batch = torch.arange(batch_size).repeat_interleave(self.config.N_particles)
 
         # normalize the polarization block to unit length without in-place slicing (keeps autograd happy)
         start = self.config.N_spatial_dim
@@ -42,19 +49,17 @@ class Trainer:
         # rebuild x to avoid in-place grad issues on a view
         x = torch.cat((x[:, :start], pol, x[:, end:]), dim=1)
 
-        return x
+        return x, batch
 
     def train(self, optim_steps):
-        x = self.get_initial_state()  # Initialize the state of the system
-
-        edge_index = self.get_nbs(x)  # [2, num_edges]
+        x, batch = self.get_initial_state()  # Initialize the state of the system
 
         # Forward pass
-        output = self.particle_system(x, edge_index, steps = optim_steps)  # [num_nodes, out_dim]
+        output = self.particle_system(x, batch, steps = optim_steps)  # [B*N, out_dim]
 
 
         # Here you would compute your loss and perform backpropagation
-        loss = compute_loss(output, self.config)  # Compute your loss here
+        loss = compute_loss(output, self.config, batch)
         # Update your model parameters here
         
         if torch.is_grad_enabled():
@@ -68,15 +73,14 @@ class Trainer:
 
     def rollout(self, steps) -> list:
         with torch.no_grad():
-            x = self.get_initial_state()  # Initialize the state of the system
+            x, batch = self.get_initial_state()  # Initialize the state of the system
 
-            edge_index = self.get_nbs(x)  # [2, num_edges]
+            first_mask = batch == 0
+            states = [x[first_mask].detach().cpu().numpy()]
 
-            states = [x.detach().cpu().numpy()]
-
-            for s in range(steps):
-                output = self.particle_system(x, edge_index, steps=1)  # [num_nodes, out_dim]
-                states.append(output.detach().cpu().numpy())
+            for _ in range(steps):
+                output = self.particle_system(x, batch, steps=1)  # [B*N, out_dim]
+                states.append(output[first_mask].detach().cpu().numpy())
                 x = output  # Update the state for the next step
 
             return states

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class SimulationConfig:
     dt : float = 0.1
     steps : int = 50
+    batch_size : int = 5
 
 
 @dataclass

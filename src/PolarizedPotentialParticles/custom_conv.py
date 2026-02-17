@@ -40,10 +40,10 @@ class CustomNNConv(MessagePassing):
 
         self.reset_parameters()
 
-        # zero the learnable parameters of the final linear layer
-        if self.config.particle_config.zero_initialization:
-            zeros(self.lin[-1].weight)
-            zeros(self.lin[-1].bias)
+        # # zero the learnable parameters of the final linear layer
+        # if self.config.particle_config.zero_initialization:
+        #     zeros(self.lin[-1].weight)
+        #     zeros(self.lin[-1].bias)
 
         self.aggr = 'add'  # or 'mean', 'max', etc. 
 
@@ -93,6 +93,7 @@ class CustomNNConv(MessagePassing):
         self,
         x: Union[Tensor, OptPairTensor],
         edge_index: Adj,
+        batch: OptTensor | None = None,
     ) -> Tensor:
 
         if not isinstance(x, Tensor):
@@ -101,7 +102,7 @@ class CustomNNConv(MessagePassing):
         # x.shape = [num_nodes, state_channels]
 
         # propagate calls message, aggr and update in order.
-        return self.propagate(edge_index, x=x) # [num_nodes, out_channels]
+        return self.propagate(edge_index, x=x, batch=batch) # [num_nodes, out_channels]
 
 
     def message(self, x_i : Tensor, x_j: Tensor) -> Tensor:
