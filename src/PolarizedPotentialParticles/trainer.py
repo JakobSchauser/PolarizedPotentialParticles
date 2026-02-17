@@ -84,3 +84,4 @@ class Trainer:
                 x = output  # Update the state for the next step
 
             return states
+        

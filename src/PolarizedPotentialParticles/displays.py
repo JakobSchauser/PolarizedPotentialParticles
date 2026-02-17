@@ -17,15 +17,15 @@ class Displayer:
 
     def plot_loss(self):
         losses = [h["loss"] for h in self.trainer.history]
-        plt.figure(figsize=(10, 5))
-        plt.plot(losses, '.', label="Loss")
-        plt.yscale("log")
-        plt.xlabel("Training Steps")
-        plt.ylabel("Loss")
-        plt.legend()
-        plt.title("Training Loss Over Time")
-        return plt.gcf()
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(losses, '.', label="Loss")
+        ax.set_yscale("log")
+        ax.set_xlabel("Training Steps")
+        ax.set_ylabel("Loss")
+        ax.legend()
+        ax.set_title("Training Loss Over Time")
 
+        return fig
 
     def display_loss(self):
         return pn.panel(self.plot_loss(), width=600, height=400)
@@ -58,7 +58,7 @@ class Displayer:
 
     def display_rollout_as_static(self, rollout : list):
         # Plot every ten frames of the particles
-        plt.figure(figsize=(6, 6))
+        fig, ax = plt.subplots(figsize=(6, 6))
         num_frames = len(range(0, len(rollout), 10))
         for i, frame_idx in enumerate(range(0, len(rollout), 10)):
             frame = self._state_for_display(rollout[frame_idx])
@@ -67,16 +67,20 @@ class Displayer:
             polarity = frame[:, self.trainer.config.N_spatial_dim:self.trainer.config.N_spatial_dim + 2 * self.trainer.config.N_polarizations]  # Get the polarizations for the current frame
             
             color = plt.cm.Blues(0.3 + 0.7 * i / max(1, num_frames - 1))  # Blue gradient from light to dark
-            plt.scatter(pos[:, 0], pos[:, 1], s=100, alpha=0.5, c=[color])  # Plot the positions
+            ax.scatter(pos[:, 0], pos[:, 1], s=100, alpha=0.5, c=[color])  # Plot the positions
 
             # Plot the polarization vectors as arrows if first or last frame
             if not (i == 0 or i == num_frames - 1):
                 continue
             for j in range(pos.shape[0]):
-                plt.arrow(pos[j, 0], pos[j, 1], polarity[j, 0]*0.05, polarity[j, 1]*0.05, head_width=0.02, head_length=0.02, fc='r', ec='r')
+                ax.arrow(pos[j, 0], pos[j, 1], polarity[j, 0]*0.05, polarity[j, 1]*0.05, head_width=0.02, head_length=0.02, fc='r', ec='r')
 
 
         # close the plot and show as static image in notebook
-        plt.close()
+        plt.close(fig)
 
-        return pn.panel(plt.gcf(), width=600, height=600)
+        return pn.panel(fig, width=600, height=600)
+    
+
+    def display_multiple(self, panels: list):
+        return pn.Row(*panels, width=600, height=600)
