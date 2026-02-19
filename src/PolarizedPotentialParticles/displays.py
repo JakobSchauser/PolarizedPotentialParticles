@@ -162,7 +162,7 @@ class Displayer:
             pos = frame[:, :3]  # Get the positions for the current frame
             time = frame_idx / len(rollout)  # Normalize time to [0, 1]
 
-            ax.scatter(pos[:, 0], pos[:, 1], time, s=100, alpha=0.5, c="Blue")  # Plot the positions in 3D
+            ax.scatter(pos[:, 0], pos[:, 1], pos[:, 2], s=100, alpha=0.5, c="Blue")  # Plot the positions in 3D
 
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(-1.1, 1.1)

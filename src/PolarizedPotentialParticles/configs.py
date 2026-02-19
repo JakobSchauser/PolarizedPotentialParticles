@@ -28,7 +28,7 @@ class Config:
     particle_config : ParticleConfig
     simulation_config : SimulationConfig
 
-    N_spatial_dim : int = 2
+    N_spatial_dim : int = 3
     N_polarizations : int = 1
     N_particles : int = 16*4
 

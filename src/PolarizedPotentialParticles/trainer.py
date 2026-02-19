@@ -92,7 +92,7 @@ class Trainer:
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
         side = int(self.config.N_particles ** 0.5)
-        x = (2.*torch.rand((num_nodes, 2))- 1.)*0.001  # [B*N, state_channels]
+        x = (2.*torch.rand((num_nodes, self.config.N_spatial_dim))- 1.)*0.001  # [B*N, state_channels]
 
         dist = 0.1
 
@@ -101,6 +101,8 @@ class Trainer:
             particle_idx = i % self.config.N_particles
             x[i, 0] = (particle_idx % side) * dist + 0.0001 * torch.rand(1)  # x position with some noise
             x[i, 1] = (particle_idx // side) * dist + 0.0001 * torch.rand(1)  # y position with some noise
+            if self.config.N_spatial_dim > 2:
+                x[i, 2] = 2. * dist * torch.rand(1)  # z position with some noise
 
         # center the grid around the origin
         x[:, :2] -= dist * side / 2
@@ -128,7 +130,7 @@ class Trainer:
 
                 # add chance to loss
                 diff = x - output
-                total_loss += 0.01 * torch.mean(diff**2)
+                total_loss += 0.1 * torch.mean(diff**2)
 
                 x = output  # Update the state for the next step
             loss = total_loss / optim_steps
