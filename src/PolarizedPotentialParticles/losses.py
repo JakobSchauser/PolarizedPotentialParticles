@@ -27,7 +27,7 @@ def relaxation_distance_loss(output : torch.Tensor, config : Config) -> torch.Te
     pos_i = pos[edge_index[0]]  # [num_edges, 2]
     pos_j = pos[edge_index[1]]  # [num_edges, 2
     dist_ij = torch.norm(pos_i - pos_j, dim=-1)  # [num_edges]
-    loss = torch.sum((dist_ij - 0.55) ** 2) / (edge_index.shape[1])*1.1  # mean squared error from 0.55 distance 
+    loss = torch.sum((dist_ij - 0.12) ** 2) / (edge_index.shape[1])*1.1  # mean squared error from 0.12 distance 
     return loss
 
 def compute_loss(output : torch.Tensor, config : Config, batch : torch.Tensor) -> torch.Tensor:
@@ -36,8 +36,8 @@ def compute_loss(output : torch.Tensor, config : Config, batch : torch.Tensor) -
         mask = batch == b
         pos = output[mask][:, :config.N_spatial_dim]
         # losses.append(is_everyone_equidistant(pos, config))
-        # losses.append(relaxation_distance_loss(output[mask], config))
-        losses.append(image_loss(output[mask], config))
+        losses.append(relaxation_distance_loss(output[mask], config))
+        # losses.append(image_loss(output[mask], config))
 
     return torch.stack(losses).mean()
 

@@ -152,6 +152,29 @@ class Displayer:
 
         return pn.panel(fig, width=600, height=600)
     
+    def display_rollout_3d(self, rollout : list):
+
+        fig, ax = plt.subplots(figsize=(6, 6), subplot_kw={'projection': '3d'})
+
+        def update(frame_idx):
+            ax.clear()
+            frame = self._state_for_display(rollout[frame_idx])
+            pos = frame[:, :3]  # Get the positions for the current frame
+            time = frame_idx / len(rollout)  # Normalize time to [0, 1]
+
+            ax.scatter(pos[:, 0], pos[:, 1], time, s=100, alpha=0.5, c="Blue")  # Plot the positions in 3D
+
+            ax.set_xlim(-1.1, 1.1)
+            ax.set_ylim(-1.1, 1.1)
+            ax.set_zlim(-1.1, 1.1)
+    
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=False)
+        anim.save("animation_3d.gif", writer="pillow")
+        plt.close(fig)
+        return pn.panel("animation_3d.gif", width=600, height=600)
+
+
+
 
     def display_multiple(self, panels: list):
         return pn.Row(*panels, width=600, height=600)
