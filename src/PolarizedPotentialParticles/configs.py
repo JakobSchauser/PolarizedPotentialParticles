@@ -12,12 +12,13 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 16
+    hidden_dim : int = 8
     message_out_channels : int = 8
 
-    out_dim : int = 2 + 2 * 1 + 16  # dx, dy, dpol_x, dpol_y, d_hidden1...
-
+    out_dim : int = 1 + 2 * 1 + 8  # dx, dy, dpol_x, dpol_y, d_hidden1...
     zero_initialization : bool = True
+
+
 
 
     
@@ -29,9 +30,9 @@ class Config:
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    N_particles : int = 100
+    N_particles : int = 32*2
 
-    neighbor_radius : float = 1.0
+    neighbor_radius : float = 0.15
 
     @property
     def message_channels(self) -> int:

@@ -1,5 +1,5 @@
 from polarizedpotentialparticles.configs import Config
-from polarizedpotentialparticles.custom_conv import CustomNNConv
+from polarizedpotentialparticles.custom_conv import CustomNNConv, HNNConv
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import radius_graph
@@ -39,19 +39,8 @@ class Particle(torch.nn.Module):
         # assert self.x is not None
 
         # output: [num_nodes, out_dim]
-        # We need to parse the output into position updates, polarization updates, and hidden state updates
         # # [dx, dy, dpol_x, dpol_y, d_hidden1, d_hidden2, ...]
-        # dx = output[:, 0]  # [num_nodes]
-        # dy = output[:, 1]  # [num_nodes]
-        # dpol_x = output[:, 2]  # [num_nodes]
-        # dpol_y = output[:, 3]  # [num_nodes]
-        # d_hidden = output[:, 4:]  # [num_nodes, hidden_dim]
-
-        # dt = self.config.simulation_config.dt
-        # # Update positions and polarizations
-        # x[:, :self.config.N_spatial_dim] += torch.stack((dx, dy), dim=1) * dt
-        # x[:, self.config.N_spatial_dim:self.config.N_spatial_dim + 2 * self.config.N_polarizations] += torch.stack((dpol_x, dpol_y), dim=1) * dt
-        # x[:, self.config.N_spatial_dim + 2 * self.config.N_polarizations:] += d_hidden * dt
+        
         end_of_spatial_dims = self.config.N_spatial_dim
 
         # move spatially along the direction of the first polarization vector
@@ -111,12 +100,74 @@ class Particle(torch.nn.Module):
 
 
 
-# class ParticleSystem(torch.nn.Module):
-# 	def __init__(self, config : ParticleConfig):
-# 		super().__init__()
-# 		self.config = config
 
-# 		self.particles = Particle(config)
+class HamiltonianParticle(torch.nn.Module):
+    def __init__(self, config : Config):
+        super().__init__()
+        self.config = config
 
-# 	def forward(self, x, edge_index):
-# 		return self.particles(x, edge_index)
+        
+        self.message_conv : torch.nn.Module | None = None
+        self.own_state_nn : torch.nn.Module | None = None
+        self.message_to_output_layer : torch.nn.Module | None = None
+
+        self.setup()
+
+    def setup(self):
+        self.initialize_architecture()
+
+    def initialize_architecture(self):
+        # Message NN
+        self.message_conv = HNNConv(self.config)
+        self.message_to_output_layer = torch.nn.Linear(
+            self.config.particle_config.message_out_channels,
+            self.config.particle_config.out_dim,
+        )
+
+        if self.config.particle_config.zero_initialization:
+            with torch.no_grad():
+                self.message_to_output_layer.weight.zero_()
+                self.message_to_output_layer.bias.zero_()
+
+    def update(self, output, x):
+        # assert self.x is not None
+        # output: [num_nodes, out_dim]
+        # [H]
+
+        # Hamiltonian update: compute the gradient of the Hamiltonian with respect to the state
+        move_update = torch.autograd.grad(
+            outputs=output.sum(),  # sum over all particles to get a scalar Hamiltonian
+            inputs=x,
+            create_graph=True,  # we need to create a graph for the gradients to compute second derivatives
+        )[0]  # [num_nodes, state_dim]
+
+        # clip the update to prevent exploding updates
+        # move_update = torch.clamp(move_update, -0.2, 0.2)
+
+        # update the state by moving in the direction of the negative gradient (gradient descent)
+        x = x - move_update * 0.1
+
+        x.requires_grad_()  # we need to retain gradients for the updated state to compute the Hamiltonian updates in the next step
+
+        return x
+    
+
+    def forward(self, x, batch, steps):
+        assert self.message_conv is not None 
+        assert self.message_to_output_layer is not None
+        # x: [B*N, state_channels]
+        # batch: [B*N]
+
+        for _ in range(steps):
+            edge_index = radius_graph(
+                x[:, : self.config.N_spatial_dim],
+                r=self.config.neighbor_radius,
+                loop=False,
+                batch=batch,
+            )
+
+            output = self.message_conv(x, edge_index, batch=batch)  # [B*N, out_channels]
+
+            x = self.update(output, x)
+
+        return x

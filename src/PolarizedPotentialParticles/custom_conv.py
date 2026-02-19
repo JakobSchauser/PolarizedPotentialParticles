@@ -3,6 +3,8 @@ from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.inits import reset, zeros
 from torch_geometric.typing import Adj, OptPairTensor, OptTensor, Size
+from torch_geometric.utils import degree
+
 
 from typing import Callable, Tuple, Union
 from torch import Tensor
@@ -32,7 +34,7 @@ class CustomNNConv(MessagePassing):
         self.nn = torch.nn.Sequential(*mlp1)
 
         mlp2 = []
-        mlp2.append(Linear(state_channels + state_channels, 32))
+        mlp2.append(Linear(state_channels + 1 + state_channels + config.message_channels, 32))  # +1 for degree, + message channels for the aggregated skip connection
         mlp2.append(torch.nn.ReLU())
         mlp2.append(Linear(32, out_channels))
 
@@ -45,7 +47,7 @@ class CustomNNConv(MessagePassing):
         #     zeros(self.lin[-1].weight)
         #     zeros(self.lin[-1].bias)
 
-        self.aggr = 'add'  # or 'mean', 'max', etc. 
+        self.aggr = 'mean'  # or 'mean', 'max', etc. 
 
     def reset_parameters(self):
         super().reset_parameters()
@@ -95,31 +97,121 @@ class CustomNNConv(MessagePassing):
         edge_index: Adj,
         batch: OptTensor | None = None,
     ) -> Tensor:
-
         if not isinstance(x, Tensor):
             raise ValueError("I dont understand Pytorch-error!!!")
-        
-        # x.shape = [num_nodes, state_channels]
 
-        # propagate calls message, aggr and update in order.
-        return self.propagate(edge_index, x=x, batch=batch) # [num_nodes, out_channels]
+        deg = degree(edge_index[0], num_nodes=x.size(0), dtype=x.dtype).unsqueeze(-1)  # Maybe Batch??
+        return self.propagate(edge_index, x=x, deg=deg, batch=batch) # [num_nodes, out_channels]
 
 
-    def message(self, x_i : Tensor, x_j: Tensor) -> Tensor:
+    def message(self, x_i : Tensor, x_j: Tensor, ) -> Tensor:
         # x_i, x_j: [num_edges, state_channels]
 
         edge_attr = self.make_msg(x_i, x_j)
         conv = self.nn(edge_attr)
 
-        return conv
-        # weight = weight.view(-1, self.in_channels_l, self.out_channels)
-        # return torch.matmul(x_j.unsqueeze(1), weight).squeeze(1)
+
+        return torch.cat([conv, edge_attr], dim=-1)
 
 
-    def update(self, aggr_out: Tensor, x : Tensor) -> Tensor:
+    def update(self, aggr_out: Tensor, x : Tensor, deg: Tensor) -> Tensor:
 
         x_no_spatial = x[:, self.config.N_spatial_dim:]  # [num_nodes, state_channels]
 
-        out = torch.cat([x_no_spatial, aggr_out], dim=-1)
+        out = torch.cat([x_no_spatial, deg, aggr_out], dim=-1)
         out = self.lin(out)
+        return out
+    
+
+
+class HNNConv(MessagePassing):
+    def __init__(self, config : Config):
+        super().__init__()
+
+        self.config = config
+
+        out_channels = 2
+
+
+        arbitrary_size = 8
+
+        mlp1 = []
+        mlp1.append(Linear(config.N_spatial_dim + 1, 32))
+        mlp1.append(torch.nn.ReLU())
+        mlp1.append(Linear(32, arbitrary_size)) # arrnitratry size, but why not 
+        
+        self.nn = torch.nn.Sequential(*mlp1)
+
+        mlp2 = []
+        mlp2.append(Linear(arbitrary_size + 1, 32))  # +1 for degree, #RuntimeError: mat1 and mat2 shapes cannot be multiplied (80x12 and 9x32)
+        mlp2.append(torch.nn.ReLU())
+        mlp2.append(Linear(32, out_channels))
+
+        self.lin = torch.nn.Sequential(*mlp2)
+
+        self.reset_parameters()
+
+
+        self.aggr = 'mean'  # or 'mean', 'max', etc. 
+
+    def reset_parameters(self):
+        super().reset_parameters()
+        reset(self.nn)
+        reset(self.lin)
+
+
+    def make_msg(self, x_i, x_j):
+		# rel_ij =  Dist_ij, 
+
+        #           dot(pi,pj), 
+        #           dot(qi, qj), 
+
+        #           dot(r_ij, pi), 
+        #           dot(r_ij, qi), 
+
+        #           hidden_j - hidden_i, 
+        #           hidden_j, 
+        #
+        #           # dim = 1 + 2 + 2 + 2*n_hidden_dim
+
+        r_ij = x_i - x_j  # [num_edges, N_spatial_dim]
+
+        dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
+
+        dir_ij = r_ij / (dist_ij + 1e-8)  # normalize to get direction, add small epsilon to prevent division by zero
+
+        dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
+
+        edge_attr = torch.cat([dir_ij, dist_ij], dim=-1)  # [num_edges, N_spatial_dim + 1]
+
+        return edge_attr
+
+
+    def forward(
+        self,
+        x: Union[Tensor, OptPairTensor],
+        edge_index: Adj,
+        batch: OptTensor | None = None,
+    ) -> Tensor:
+        if not isinstance(x, Tensor):
+            raise ValueError("I dont understand Pytorch-error!!!")
+
+        deg = degree(edge_index[0], num_nodes=x.size(0), dtype=x.dtype).unsqueeze(-1)  # Maybe Batch??
+        return self.propagate(edge_index, x=x, deg=deg, batch=batch) # [num_nodes, out_channels]
+
+
+    def message(self, x_i : Tensor, x_j: Tensor, ) -> Tensor:
+        # x_i, x_j: [num_edges, state_channels]
+
+        edge_attr = self.make_msg(x_i, x_j)
+        conv = self.nn(edge_attr)
+
+
+        return conv
+
+
+    def update(self, aggr_out: Tensor, x : Tensor, deg: Tensor) -> Tensor:
+
+        out = torch.cat([deg, aggr_out], dim=-1)
+        out = self.lin(out) 
         return out

@@ -3,7 +3,7 @@ from matplotlib.animation import FuncAnimation
 import panel as pn
 import matplotlib.pyplot as plt
 from polarizedpotentialparticles.trainer import Trainer
-
+from polarizedpotentialparticles.losses import gaussian_splat_from_image
 
 class Displayer:
     def __init__(self, trainer: Trainer):
@@ -28,25 +28,29 @@ class Displayer:
         return fig
 
     def display_loss(self):
-        return pn.panel(self.plot_loss(), width=600, height=400)
+        fig = self.plot_loss()
+        plt.close(fig)
+        return pn.panel(fig, width=600, height=400)
 
     def display_rollout(self, rollout : list):
         # Create an animation of the particle positions over time
         fig, ax = plt.subplots(figsize=(6, 6))
         scat = ax.scatter([], [], s=100)  # Initialize an empty scatter plot
 
-        extends = [-3, 3, -3, 3]
-
-        ax.set_xlim(extends[0], extends[1])
-        ax.set_ylim(extends[2], extends[3])
+        x_lim = (-3, 3)
+        y_lim = (-3, 3)
+        ax.set_xlim(x_lim)
+        ax.set_ylim(y_lim)
 
         def update(frame):
             pos = self._state_for_display(rollout[frame])[:, :2]  # Get the positions for the current frame
+
+
             scat.set_offsets(pos)  # Update the scatter plot with new positions
-            return scat,
-
+            
+            return scat, 
+    
         anim = FuncAnimation(fig, update, frames=len(rollout), interval=50, blit=True)
-
 
         # show as gif in notebook
         anim.save("animation.gif", writer="pillow")
@@ -54,7 +58,42 @@ class Displayer:
 
 
         return pn.panel("animation.gif", width=600, height=600)
+
+
+
+    def display_rollout_image(self, rollout : list):
+        # Create an animation of the particle positions over time
+        fig, ax = plt.subplots(figsize=(6, 6))
+        scat = ax.scatter([], [], s=100)  # Initialize an empty scatter plot
+
+        x_lim = (-1.1, 1.1)
+        y_lim = (-1.1, 1.1)
+        ax.set_xlim(x_lim)
+        ax.set_ylim(y_lim)
+        
+        emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/circle.png"
+
+        img_grid = gaussian_splat_from_image(emoji_path, grid_size=64, sigma=0.1)
+
+        # display the image in real life coordinates
+        ax.imshow(img_grid, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=0.5)
+
+        def update(frame):
+            pos = self._state_for_display(rollout[frame])[:, :2]  # Get the positions for the current frame
+
+            scat.set_offsets(pos)  # Update the scatter plot with new positions
+            
+            return scat, 
     
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+
+        # show as gif in notebook
+        anim.save("animation.gif", writer="pillow")
+        plt.close(fig)
+
+
+        return pn.panel("animation.gif", width=600, height=600)
+
 
     def display_rollout_as_static(self, rollout : list):
         # Plot every ten frames of the particles
@@ -78,8 +117,11 @@ class Displayer:
                 ax.arrow(pos[j, 0], pos[j, 1], polarity[j, 0]*0.05, polarity[j, 1]*0.05, head_width=0.02, head_length=0.02, fc='r', ec='r')
 
 
+  
         # close the plot and show as static image in notebook
         plt.close(fig)
+
+
 
         return pn.panel(fig, width=600, height=600)
     
