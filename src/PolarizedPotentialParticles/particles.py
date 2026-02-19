@@ -145,7 +145,7 @@ class HamiltonianParticle(torch.nn.Module):
         # move_update = torch.clamp(move_update, -0.2, 0.2)
 
         # update the state by moving in the direction of the negative gradient (gradient descent)
-        x = x - move_update * 0.1
+        x = x - move_update * 0.01
 
         x.requires_grad_()  # we need to retain gradients for the updated state to compute the Hamiltonian updates in the next step
 

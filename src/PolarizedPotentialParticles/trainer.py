@@ -52,27 +52,7 @@ class Trainer:
 
         return x, batch
     
-    def get_initial_state_hamiltonian(self):
-        # make a regular grid of particles as initial state
-        batch_size = self.config.simulation_config.batch_size
-        num_nodes = batch_size * self.config.N_particles
-        side = int(self.config.N_particles ** 0.5)
-        x = (2.*torch.rand((num_nodes, 2))- 1.)*0.001  # [B*N, state_channels]
 
-        dist = 0.1
-
-        for i in range(num_nodes):
-            batch_idx = i // self.config.N_particles
-            particle_idx = i % self.config.N_particles
-            x[i, 0] = (particle_idx % side) * dist + 0.0001 * torch.rand(1)  # x position with some noise
-            x[i, 1] = (particle_idx // side) * dist + 0.0001 * torch.rand(1)  # y position with some noise
-
-        # center the grid around the origin
-        x[:, :2] -= dist * side / 2
-
-        x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
-        batch = torch.arange(batch_size).repeat_interleave(self.config.N_particles)
-        return x, batch
 
 
 
@@ -105,6 +85,28 @@ class Trainer:
         x = torch.cat((x[:, :start], pol, x[:, end:]), dim=1)
 
 
+        return x, batch
+    
+    def get_initial_state_hamiltonian(self):
+        # make a regular grid of particles as initial state
+        batch_size = self.config.simulation_config.batch_size
+        num_nodes = batch_size * self.config.N_particles
+        side = int(self.config.N_particles ** 0.5)
+        x = (2.*torch.rand((num_nodes, 2))- 1.)*0.001  # [B*N, state_channels]
+
+        dist = 0.1
+
+        for i in range(num_nodes):
+            batch_idx = i // self.config.N_particles
+            particle_idx = i % self.config.N_particles
+            x[i, 0] = (particle_idx % side) * dist + 0.0001 * torch.rand(1)  # x position with some noise
+            x[i, 1] = (particle_idx // side) * dist + 0.0001 * torch.rand(1)  # y position with some noise
+
+        # center the grid around the origin
+        x[:, :2] -= dist * side / 2
+
+        x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
+        batch = torch.arange(batch_size).repeat_interleave(self.config.N_particles)
         return x, batch
 
     def get_initial_state(self):

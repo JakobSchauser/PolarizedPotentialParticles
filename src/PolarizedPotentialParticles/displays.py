@@ -1,9 +1,12 @@
 
+from logging import config
 from matplotlib.animation import FuncAnimation
 import panel as pn
 import matplotlib.pyplot as plt
+import torch
 from polarizedpotentialparticles.trainer import Trainer
-from polarizedpotentialparticles.losses import gaussian_splat_from_image
+from polarizedpotentialparticles.losses import gaussian_splat_from_image, gaussian_splat
+
 
 class Displayer:
     def __init__(self, trainer: Trainer):
@@ -71,7 +74,7 @@ class Displayer:
         ax.set_xlim(x_lim)
         ax.set_ylim(y_lim)
         
-        emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/circle.png"
+        emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/thiccdonut.png"
 
         img_grid = gaussian_splat_from_image(emoji_path, grid_size=64, sigma=0.1)
 
@@ -93,6 +96,30 @@ class Displayer:
 
 
         return pn.panel("animation.gif", width=600, height=600)
+
+
+    def display_rollout_image_gauss(self, rollout : list):
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.set_xlim(-1.1, 1.1)
+        ax.set_ylim(-1.1, 1.1)
+
+        pos0 = self._state_for_display(rollout[0])[:, :2]
+        pos0 = torch.tensor(pos0)
+        img0 = gaussian_splat(pos0, grid_size=64, sigma=0.1)
+        im = ax.imshow(img0, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=1.)
+
+        def update(frame):
+            ro = rollout[frame][:,:2]
+            ro = self._state_for_display(ro)
+            ro = torch.tensor(ro)
+            particle_grid = gaussian_splat(ro, grid_size=64, sigma=0.1)
+            im.set_data(particle_grid)
+            return im,
+
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim.save("animation_gauss.gif", writer="pillow")
+        plt.close(fig)
+        return pn.panel("animation_gauss.gif", width=600, height=600)
 
 
     def display_rollout_as_static(self, rollout : list):

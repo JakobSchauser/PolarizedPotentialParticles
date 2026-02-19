@@ -30,7 +30,7 @@ class Config:
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    N_particles : int = 32*2
+    N_particles : int = 100
 
     neighbor_radius : float = 0.15
 

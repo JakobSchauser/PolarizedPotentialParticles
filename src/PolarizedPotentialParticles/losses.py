@@ -53,6 +53,9 @@ def gaussian_splat(pos, grid_size=64, sigma=0.1):
     py = pos[:, 1].view(-1, 1, 1)
     d2 = (xx - px) ** 2 + (yy - py) ** 2  # [P, H, W]
     grid = torch.exp(-d2 / (2 * sigma ** 2)).sum(dim=0)  # [H, W]
+
+    # normalize the grid to [0, 1]
+    grid = grid / (grid.max() + 1e-8)
     return grid
 
 
@@ -78,7 +81,7 @@ def image_loss(output : torch.Tensor, config : Config) -> torch.Tensor:
     # try to make the particles form an arbitrary shape
     grid_size = 64
 
-    emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/circle.png"
+    emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/thiccdonut.png"
 
     img_grid = gaussian_splat_from_image(emoji_path, grid_size=grid_size, sigma=0.1)
     
