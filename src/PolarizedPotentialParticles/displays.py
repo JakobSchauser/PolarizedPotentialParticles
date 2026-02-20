@@ -5,7 +5,7 @@ import panel as pn
 import matplotlib.pyplot as plt
 import torch
 from polarizedpotentialparticles.trainer import Trainer
-from polarizedpotentialparticles.losses import gaussian_splat_from_image, gaussian_splat
+from polarizedpotentialparticles.losses import gaussian_splat_from_image, gaussian_splat, gaussian_splat_data
 
 
 class Displayer:
@@ -74,9 +74,9 @@ class Displayer:
         ax.set_xlim(x_lim)
         ax.set_ylim(y_lim)
         
-        emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/thiccdonut.png"
+        emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/morphologies/" + self.trainer.config.loss_config.target + ".png"
 
-        img_grid = gaussian_splat_from_image(emoji_path, grid_size=64, sigma=0.1)
+        img_grid = gaussian_splat_from_image(emoji_path)
 
         # display the image in real life coordinates
         ax.imshow(img_grid, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=0.5)
@@ -105,14 +105,14 @@ class Displayer:
 
         pos0 = self._state_for_display(rollout[0])[:, :2]
         pos0 = torch.tensor(pos0)
-        img0 = gaussian_splat(pos0, grid_size=64, sigma=0.1)
+        img0 = gaussian_splat_data(pos0)
         im = ax.imshow(img0, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=1.)
 
         def update(frame):
             ro = rollout[frame][:,:2]
             ro = self._state_for_display(ro)
             ro = torch.tensor(ro)
-            particle_grid = gaussian_splat(ro, grid_size=64, sigma=0.1)
+            particle_grid = gaussian_splat_data(ro)
             im.set_data(particle_grid)
             return im,
 
@@ -120,6 +120,35 @@ class Displayer:
         anim.save("animation_gauss.gif", writer="pillow")
         plt.close(fig)
         return pn.panel("animation_gauss.gif", width=600, height=600)
+    
+    def display_rollout_image_gauss_difference(self, rollout : list):
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.set_xlim(-1.1, 1.1)
+        ax.set_ylim(-1.1, 1.1)
+
+        emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/morphologies/" + self.trainer.config.loss_config.target + ".png"
+        img_grid = gaussian_splat_from_image(emoji_path)
+        im = ax.imshow(img_grid, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=1.)
+
+        ax.set_title("Diff: ")
+
+        def update(frame):
+            ro = rollout[frame][:,:2]
+            ro = self._state_for_display(ro)
+            ro = torch.tensor(ro)
+            particle_grid = gaussian_splat_data(ro)
+
+            difference_grid = (img_grid - particle_grid)**2
+            im.set_data(difference_grid)
+
+            ax.set_title(f"Diff: {difference_grid.sum().item():.4f}")
+
+            return im,
+
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim.save("animation_gauss_difference.gif", writer="pillow")
+        plt.close(fig)
+        return pn.panel("animation_gauss_difference.gif", width=600, height=600)
 
 
     def display_rollout_as_static(self, rollout : list):

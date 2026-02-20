@@ -130,6 +130,108 @@ class HNNConv(MessagePassing):
 
         self.config = config
 
+        out_channels = 1
+
+
+        arbitrary_size = 8
+
+        mlp1 = []
+        mlp1.append(Linear(config.N_spatial_dim + config.particle_config.hidden_dim + 1, 32))
+        mlp1.append(torch.nn.ReLU())
+        mlp1.append(Linear(32, arbitrary_size)) # arrnitratry size, but why not 
+        
+        self.nn = torch.nn.Sequential(*mlp1)
+
+        mlp2 = []
+        mlp2.append(Linear(arbitrary_size + 1 + config.particle_config.hidden_dim, 32))  # +1 for degree, + own hidden state
+        mlp2.append(torch.nn.ReLU())
+        mlp2.append(Linear(32, out_channels))
+
+        self.lin = torch.nn.Sequential(*mlp2)
+        self.reset_parameters()
+
+
+        self.aggr = 'mean'  # or 'mean', 'max', etc. 
+
+    def reset_parameters(self):
+        super().reset_parameters()
+        reset(self.nn)
+        reset(self.lin)
+
+
+    def make_msg(self, x_i, x_j):
+		# rel_ij =  Dist_ij, 
+
+        #           dot(pi,pj), 
+        #           dot(qi, qj), 
+
+        #           dot(r_ij, pi), 
+        #           dot(r_ij, qi), 
+
+        #           hidden_j - hidden_i, 
+        #           hidden_j, 
+        #
+        #           # dim = 1 + 2 + 2 + 2*n_hidden_dim
+
+        r_ij = x_i[:, :self.config.N_spatial_dim] - x_j[:, :self.config.N_spatial_dim]  # [num_edges, N_spatial_dim]
+
+        dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
+
+        dir_ij = r_ij / (dist_ij + 1e-8)  # normalize to get direction, add small epsilon to prevent division by zero
+
+        dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
+
+        hidden_i = x_i[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]
+        hidden_j = x_j[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]
+
+
+        edge_attr = torch.cat([dir_ij, dist_ij, hidden_j], dim=-1)  # [num_edges, N_spatial_dim + 1 + hidden_dim]
+
+        return edge_attr
+
+
+    def forward(
+        self,
+        x: Union[Tensor, OptPairTensor],
+        edge_index: Adj,
+        batch: OptTensor | None = None,
+    ) -> Tensor:
+        if not isinstance(x, Tensor):
+            raise ValueError("I dont understand Pytorch-error!!!")
+
+        deg = degree(edge_index[0], num_nodes=x.size(0), dtype=x.dtype).unsqueeze(-1)  # Maybe Batch??
+        return self.propagate(edge_index, x=x, deg=deg, batch=batch) # [num_nodes, out_channels]
+
+
+    def message(self, x_i : Tensor, x_j: Tensor, ) -> Tensor:
+        # x_i, x_j: [num_edges, state_channels]
+
+        edge_attr = self.make_msg(x_i, x_j)
+
+        conv = self.nn(edge_attr)
+
+
+        return conv
+
+
+    def update(self, aggr_out: Tensor, x : Tensor, deg: Tensor) -> Tensor:
+
+        hidden_i = x[:, self.config.N_spatial_dim:]  # [num_nodes, hidden_dim]
+
+        out = torch.cat([deg, aggr_out, hidden_i], dim=-1)
+        out = self.lin(out) 
+        return out
+    
+
+
+
+
+class PolarizedHNNConv(MessagePassing):
+    def __init__(self, config : Config):
+        super().__init__()
+
+        self.config = config
+
         out_channels = 2
 
 
@@ -174,7 +276,13 @@ class HNNConv(MessagePassing):
         #
         #           # dim = 1 + 2 + 2 + 2*n_hidden_dim
 
-        r_ij = x_i - x_j  # [num_edges, N_spatial_dim]
+        x_i_pos = x_i[:, :self.config.N_spatial_dim]
+        x_j_pos = x_j[:, :self.config.N_spatial_dim]
+
+        x_i_pol = x_i[:, self.config.N_spatial_dim:self.config.N_spatial_dim*2]
+        x_j_pol = x_j[:, self.config.N_spatial_dim:self.config.N_spatial_dim*2]
+
+        r_ij = x_i_pos - x_j_pos  # [num_edges, N_spatial_dim]
 
         dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
 
@@ -182,7 +290,14 @@ class HNNConv(MessagePassing):
 
         dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
 
-        edge_attr = torch.cat([dir_ij, dist_ij], dim=-1)  # [num_edges, N_spatial_dim + 1]
+        dot_rij_pi = torch.sum(r_ij * x_i_pol, dim=-1, keepdim=True)  # [num_edges, 1]
+        x_i_pol_perp = torch.cat([-x_i_pol[:, 1:], x_i_pol[:, :1]], dim=-1)  # Rotate polarization by 90 degrees to get perpendicular direction
+        dot_rij_pi_perp = torch.sum(r_ij * x_i_pol_perp, dim=-1, keepdim=True)  # [num_edges, 1]
+
+        dot_rij = torch.cat([dot_rij_pi, dot_rij_pi_perp], dim=-1)  # [num_edges, 2]
+
+
+        edge_attr = torch.cat([dot_rij, dist_ij], dim=-1)  # [num_edges, N_spatial_dim + 1]
 
         return edge_attr
 

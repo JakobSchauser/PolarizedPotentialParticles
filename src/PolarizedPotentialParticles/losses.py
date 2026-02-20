@@ -36,13 +36,12 @@ def compute_loss(output : torch.Tensor, config : Config, batch : torch.Tensor) -
         mask = batch == b
         pos = output[mask][:, :config.N_spatial_dim]
         # losses.append(is_everyone_equidistant(pos, config))
-        losses.append(relaxation_distance_loss(output[mask], config))
-        # losses.append(image_loss(output[mask], config))
+        # losses.append(relaxation_distance_loss(output[mask], config))
+        losses.append(image_loss(output[mask], config))
 
     return torch.stack(losses).mean()
 
-
-def gaussian_splat(pos, grid_size=64, sigma=0.1):
+def gaussian_splat(pos, grid_size=64, sigma=0.05, normalize=True):
     # pos: [P, 2] in [-1, 1]
     yy, xx = torch.meshgrid(
         torch.linspace(-1, 1, grid_size, device=pos.device, dtype=pos.dtype),
@@ -54,12 +53,17 @@ def gaussian_splat(pos, grid_size=64, sigma=0.1):
     d2 = (xx - px) ** 2 + (yy - py) ** 2  # [P, H, W]
     grid = torch.exp(-d2 / (2 * sigma ** 2)).sum(dim=0)  # [H, W]
 
-    # normalize the grid to [0, 1]
-    grid = grid / (grid.max() + 1e-8)
+    if normalize:
+        # normalize the grid to [0, 1]
+        grid = grid / (grid.max() + 1e-8)
     return grid
 
 
-def gaussian_splat_from_image(img_path, grid_size=64, sigma=0.1):
+def gaussian_splat_data(pos,):
+    return gaussian_splat(pos, grid_size=64, sigma=0.05, normalize=False)
+
+
+def gaussian_splat_from_image(img_path):
     grid_size = 64
 
     img = Image.open(img_path).convert("RGBA").resize((grid_size, grid_size))
@@ -68,12 +72,14 @@ def gaussian_splat_from_image(img_path, grid_size=64, sigma=0.1):
     alpha_mask = img[:, :, 3] > 0.5
 
     # convert into list of (x,y) coordinates of the pixels that are part of the emoji shape
-    img_pos = torch.nonzero(alpha_mask).float()  # [num_pixels, 2]
+    img_pos = torch.nonzero(alpha_mask, as_tuple=False).float()
+
     img_pos = (img_pos / grid_size) * 2 - 1  # normalize to [-1, 1]
 
 
     # gaussian splatting of the image
-    img_grid = gaussian_splat(img_pos, grid_size=grid_size, sigma=0.1)
+    img_grid = gaussian_splat(img_pos, grid_size=grid_size, sigma=0.05, normalize=False) / 16.
+
 
     return img_grid
 
@@ -81,14 +87,20 @@ def image_loss(output : torch.Tensor, config : Config) -> torch.Tensor:
     # try to make the particles form an arbitrary shape
     grid_size = 64
 
-    emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/thiccdonut.png"
+    emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/morphologies/" + config.loss_config.target + ".png"
 
-    img_grid = gaussian_splat_from_image(emoji_path, grid_size=grid_size, sigma=0.1)
+    img_grid = gaussian_splat_from_image(emoji_path) 
     
     # gaussian splatting of the particle positions
     pos = output[:, :config.N_spatial_dim]  # [N_particles, N_spatial_dim]
-    particle_grid = gaussian_splat(pos, grid_size=grid_size, sigma=0.1)
 
+    # make the positions be in the same coordinate system as the image ([-1, 1])
+    pos /= 1.0 
+
+    particle_grid = gaussian_splat_data(pos, )
+
+    # print(f"Image grid max value: {img_grid.max().item():.4f}")
+    # print(f"Particle grid max value: {particle_grid.max().item():.4f}")
     # compute mean squared error between the two grids
     loss = torch.mean((img_grid - particle_grid) ** 2)
 
