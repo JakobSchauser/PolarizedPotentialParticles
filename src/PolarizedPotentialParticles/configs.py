@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Callable, Literal
 
 
 
@@ -12,14 +13,16 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 8
+    hidden_dim : int = 2
     message_out_channels : int = 8
 
     out_dim : int = 1 + 2 * 1 + 8  # dx, dy, dpol_x, dpol_y, d_hidden1...
     zero_initialization : bool = True
 
 
-
+@dataclass
+class LossConfig:
+    target : Literal["square", "circle", "oval", "donut"] = "square"
 
     
 
@@ -27,10 +30,11 @@ class ParticleConfig:
 class Config:
     particle_config : ParticleConfig
     simulation_config : SimulationConfig
+    loss_config : LossConfig
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    N_particles : int = 100
+    N_particles : int = 16
 
     neighbor_radius : float = 0.15
 
