@@ -1,9 +1,13 @@
 import numpy as np
 import torch
+from pathlib import Path
 from PIL import Image
 
 from torch_geometric.nn import radius_graph
 from polarizedpotentialparticles.configs import Config
+
+
+_IMG_GRID_CACHE: dict[tuple[str, str, str], torch.Tensor] = {}
 
 
 def is_everyone_equidistant(pos : torch.Tensor, config : Config) -> torch.Tensor:
@@ -34,14 +38,15 @@ def compute_loss(output : torch.Tensor, config : Config, batch : torch.Tensor) -
     losses = []
     for b in torch.unique(batch):
         mask = batch == b
-        pos = output[mask][:, :config.N_spatial_dim]
         # losses.append(is_everyone_equidistant(pos, config))
         # losses.append(relaxation_distance_loss(output[mask], config))
         losses.append(image_loss(output[mask], config))
 
+
     return torch.stack(losses).mean()
 
-def gaussian_splat(pos, grid_size=64, sigma=0.05, normalize=True):
+def gaussian_splat(pos, grid_size=64, normalize=True):
+    sigma = 0.1
     # pos: [P, 2] in [-1, 1]
     yy, xx = torch.meshgrid(
         torch.linspace(-1, 1, grid_size, device=pos.device, dtype=pos.dtype),
@@ -60,10 +65,10 @@ def gaussian_splat(pos, grid_size=64, sigma=0.05, normalize=True):
 
 
 def gaussian_splat_data(pos,):
-    return gaussian_splat(pos, grid_size=64, sigma=0.05, normalize=False)
+    return gaussian_splat(pos, grid_size=64, normalize=False)
 
 
-def gaussian_splat_from_image(img_path):
+def gaussian_splat_from_image(img_path, device=None):
     grid_size = 64
 
     img = Image.open(img_path).convert("RGBA").resize((grid_size, grid_size))
@@ -76,20 +81,30 @@ def gaussian_splat_from_image(img_path):
 
     img_pos = (img_pos / grid_size) * 2 - 1  # normalize to [-1, 1]
 
+    if device is None:
+        device = img_pos.device
+    img_pos = img_pos.to(device)
+
 
     # gaussian splatting of the image
-    img_grid = gaussian_splat(img_pos, grid_size=grid_size, sigma=0.05, normalize=False) / 16.
+    img_grid = gaussian_splat(img_pos, grid_size=grid_size, normalize=False) / 16.
 
 
     return img_grid
 
+
+def get_cached_target_grid(target: str, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    emoji_path = Path(__file__).resolve().parent / "morphologies" / f"{target}.png"
+    key = (str(emoji_path), str(device), str(dtype))
+    cached = _IMG_GRID_CACHE.get(key)
+    if cached is None:
+        cached = gaussian_splat_from_image(emoji_path, device=device).to(dtype=dtype)
+        _IMG_GRID_CACHE[key] = cached
+    return cached
+
 def image_loss(output : torch.Tensor, config : Config) -> torch.Tensor:
     # try to make the particles form an arbitrary shape
-    grid_size = 64
-
-    emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/morphologies/" + config.loss_config.target + ".png"
-
-    img_grid = gaussian_splat_from_image(emoji_path) 
+    img_grid = get_cached_target_grid(config.loss_config.target, output.device, output.dtype)
     
     # gaussian splatting of the particle positions
     pos = output[:, :config.N_spatial_dim]  # [N_particles, N_spatial_dim]

@@ -6,17 +6,38 @@ from torch_geometric.nn import radius_graph
 
 
 
-def uniform_circular_distribution(num_particles):
-    radius = 0.2
+def uniform_circular_distribution(num_particles, device=None):
+    radius = 0.3
     # returns [num_particles, 2] uniformly sampled in a disk of given radius
-    theta = 2 * torch.pi * torch.rand(num_particles)
-    r = radius * torch.sqrt(torch.rand(num_particles))
+    theta = 2 * torch.pi * torch.rand(num_particles, device=device)
+    r = radius * torch.sqrt(torch.rand(num_particles, device=device))
     x = r * torch.cos(theta)
     y = r * torch.sin(theta)
 
     return torch.stack([x, y], dim=1)
 
 
+def uniform_circular_distribution_deterministic(num_particles, device=None):
+    radius=0.6
+
+    i = torch.arange(num_particles, device=device, dtype=torch.float32)
+
+    # Golden angle
+    golden_angle = torch.pi * (3.0 - torch.sqrt(torch.tensor(5.0)))
+
+    theta = i * golden_angle
+
+    # Uniform area density
+    r = radius * torch.sqrt((i + 0.5) / num_particles)
+
+    x = r * torch.cos(theta)
+    y = r * torch.sin(theta)
+
+    # add a small amount of noise to break perfect symmetry
+    x += 0.01 * torch.randn_like(x)
+    y += 0.01 * torch.randn_like(y)
+
+    return torch.stack((x, y), dim=1)
 
 
 
@@ -24,6 +45,7 @@ class Particle(torch.nn.Module):
     def __init__(self, config : Config):
         super().__init__()
         self.config = config
+        self.device = torch.device(config.device)
 
         
         self.message_conv : torch.nn.Module | None = None
@@ -99,11 +121,11 @@ class Particle(torch.nn.Module):
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
 
-        x = (2.*torch.zeros((num_nodes, self.config.particle_dim))- 1.)*0.001  # [B*N, state_channels]
+        x = (2.*torch.zeros((num_nodes, self.config.particle_dim), device=self.device)- 1.)*0.001  # [B*N, state_channels]
 
-        x[:, :self.config.N_spatial_dim] = uniform_circular_distribution(num_nodes)
+        x[:, :self.config.N_spatial_dim] = uniform_circular_distribution(num_nodes, device=self.device)
 
-        batch = torch.arange(batch_size).repeat_interleave(self.config.N_particles)
+        batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
 
         # normalize the polarization block to unit length without in-place slicing (keeps autograd happy)
         start = self.config.N_spatial_dim
@@ -150,6 +172,7 @@ class HamiltonianParticle(torch.nn.Module):
     def __init__(self, config : Config):
         super().__init__()
         self.config = config
+        self.device = torch.device(config.device)
 
         
         self.message_conv : torch.nn.Module | None = None
@@ -179,18 +202,19 @@ class HamiltonianParticle(torch.nn.Module):
         # output: [num_nodes, out_dim]
         # [H]
 
-        # Hamiltonian update: compute the gradient of the Hamiltonian with respect to the state
-        move_update = torch.autograd.grad(
-            outputs=output.sum(),  # sum over all particles to get a scalar Hamiltonian
-            inputs=x,  # only take the spatial part of the state for the gradient
-            create_graph=True,  # we need to create a graph for the gradients to compute second derivatives
-        )[0]  # [num_nodes, state_dim]
 
+        need_graph = self.training and torch.is_grad_enabled()
+        dHdx = torch.autograd.grad(
+            output.sum(),
+            x,
+            create_graph=need_graph,
+            retain_graph=need_graph
+        )[0]
         # clip the update to prevent exploding updates
         # move_update = torch.clamp(move_update, -0.2, 0.2)
 
         # update the state by moving in the direction of the negative gradient (gradient descent)
-        newstate = x - move_update * 0.01
+        newstate = x - dHdx * 0.01
 
         x = newstate
 
@@ -202,14 +226,15 @@ class HamiltonianParticle(torch.nn.Module):
         # make a regular grid of particles as initial state
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
-        side = int(self.config.N_particles ** 0.5)
-        x = (2.*torch.rand((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim))- 1.)*0.001  # [B*N, state_channels]
 
+        base_pos = uniform_circular_distribution_deterministic(self.config.N_particles, device=self.device)
+        pos = base_pos.repeat(batch_size, 1)  # shape [batch_size * N_particles, 2]
 
-        x[:, :self.config.N_spatial_dim] = uniform_circular_distribution(num_nodes)
+        x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device) - 1.) * 0.001
+        x[:, :self.config.N_spatial_dim] = pos
 
         x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
-        batch = torch.arange(batch_size).repeat_interleave(self.config.N_particles)
+        batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
         return x, batch
     
 
@@ -240,6 +265,7 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
     def __init__(self, config : Config):
         super().__init__()
         self.config = config
+        self.device = torch.device(config.device)
 
         
         self.message_conv : torch.nn.Module | None = None
@@ -301,10 +327,10 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
         # make a regular grid of particles as initial state
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
-        x = (2.*torch.rand((num_nodes, self.config.N_spatial_dim*2))- 1.)*0.001  # [B*N, state_channels]
+        x = (2.*torch.rand((num_nodes, self.config.N_spatial_dim*2), device=self.device)- 1.)*0.001  # [B*N, state_channels]
 
 
-        x[:, :self.config.N_spatial_dim] = uniform_circular_distribution(num_nodes)
+        x[:, :self.config.N_spatial_dim] = uniform_circular_distribution(num_nodes, device=self.device)
         
 
         # initialize the polarization block to be unit vectors pointing to the right
@@ -312,7 +338,7 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
         x[:, self.config.N_spatial_dim+1:self.config.N_spatial_dim+2] = 0.
 
         x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
-        batch = torch.arange(batch_size).repeat_interleave(self.config.N_particles)
+        batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
         return x, batch
     
 

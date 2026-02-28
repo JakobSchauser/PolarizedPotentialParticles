@@ -7,19 +7,33 @@ name = "polarizedpotentialparticles"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11,<3.14"
+
 dependencies = [
+    # PyTorch (GPU build from CUDA index)
+    "torch==2.8.0",
+    "torchvision",
+    
+    # Visualization
     "bokeh>=3.8.2",
-    "ipykernel>=7.2.0",
-    "jupyter>=1.1.1",
-    "jupyter-bokeh>=4.0.5",
     "matplotlib>=3.9",
     "panel>=1.8.7",
-    "pip>=26.0.1",
-    "torch>=2.10.0",
-    "torch-cluster>=1.6.3",
+
+    # Jupyter
+    "jupyter>=1.1.1",
+    "jupyter-bokeh>=4.0.5",
+    "ipykernel>=7.2.0",
+
+
+    # PyG core
     "torch-geometric>=2.7.0",
-    "torchvision>=0.25.0",
+
+    # PyG CUDA extensions (must be explicitly listed)
+    "pyg-lib",
+    "torch-scatter",
+    "torch-sparse",
+    "torch-cluster",
+    "torch-spline-conv",
 ]
 
 [tool.hatch.build]
@@ -28,7 +42,13 @@ sources = ["src"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/polarizedpotentialparticles"]
 
-[dependency-groups]
-dev = [
-    "ipykernel>=7.2.0",
+[tool.uv]
+extra-index-url = [
+    # Official CUDA 12.8 torch wheels
+    "https://download.pytorch.org/whl/cu128",
+]
+
+find-links = [
+    # PyG compiled CUDA wheels for torch 2.8 + cu128
+    "https://data.pyg.org/whl/torch-2.8.0+cu128.html",
 ]

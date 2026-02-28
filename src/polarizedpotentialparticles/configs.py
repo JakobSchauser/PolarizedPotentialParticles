@@ -8,12 +8,12 @@ from typing import Callable, Literal
 class SimulationConfig:
     dt : float = 0.1
     steps : int = 50
-    batch_size : int = 5
+    batch_size : int = 16
 
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 2
+    hidden_dim : int = 0
     message_out_channels : int = 8
 
     out_dim : int = 1 + 2 * 1 + 8  # dx, dy, dpol_x, dpol_y, d_hidden1...
@@ -23,6 +23,8 @@ class ParticleConfig:
 @dataclass
 class LossConfig:
     target : Literal["square", "circle", "oval", "donut"] = "square"
+
+    sigma = 0.02
 
     
 
@@ -34,9 +36,11 @@ class Config:
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    N_particles : int = 16
+    N_particles : int = 128
 
-    neighbor_radius : float = 0.15
+    neighbor_radius : float = 0.1
+
+    device : Literal["cpu", "cuda"] = "cuda"
 
     @property
     def message_channels(self) -> int:

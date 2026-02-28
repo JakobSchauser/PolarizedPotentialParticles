@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import torch
 from polarizedpotentialparticles.trainer import Trainer
 from polarizedpotentialparticles.losses import gaussian_splat_from_image, gaussian_splat, gaussian_splat_data
-
+from pathlib import Path
 
 class Displayer:
     def __init__(self, trainer: Trainer):
@@ -74,7 +74,7 @@ class Displayer:
         ax.set_xlim(x_lim)
         ax.set_ylim(y_lim)
         
-        emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/morphologies/" + self.trainer.config.loss_config.target + ".png"
+        emoji_path = (Path(__file__).resolve().parent / "morphologies" / f"{self.trainer.config.loss_config.target}.png")
 
         img_grid = gaussian_splat_from_image(emoji_path)
 
@@ -126,7 +126,8 @@ class Displayer:
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(-1.1, 1.1)
 
-        emoji_path = "C:/Users/jakob/Documents/work/PolarizedPotentialParticles/src/polarizedpotentialparticles/morphologies/" + self.trainer.config.loss_config.target + ".png"
+        emoji_path = (Path(__file__).resolve().parent / "morphologies" / f"{self.trainer.config.loss_config.target}.png")
+
         img_grid = gaussian_splat_from_image(emoji_path)
         im = ax.imshow(img_grid, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=1.)
 
@@ -141,7 +142,7 @@ class Displayer:
             difference_grid = (img_grid - particle_grid)**2
             im.set_data(difference_grid)
 
-            ax.set_title(f"Diff: {difference_grid.sum().item():.4f}")
+            ax.set_title(f"Diff: {difference_grid.sum().item():.4f} | frame {frame+1}/{len(rollout)}")
 
             return im,
 

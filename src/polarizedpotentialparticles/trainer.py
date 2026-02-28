@@ -9,11 +9,12 @@ import torch
 class Trainer:
     def __init__(self, config : Config):
         self.config = config
+        self.device = torch.device(config.device)
         # self.particle_system = Particle(config)
-        self.particle_system = HamiltonianParticle(config)
+        self.particle_system = HamiltonianParticle(config).to(self.device)
         # self.particle_system = PolarizedHamiltonianParticle(config)
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.001)
+        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.00003)
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)
@@ -37,10 +38,10 @@ class Trainer:
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
 
-        x = 2. * torch.rand((num_nodes, self.config.particle_dim)) - 1.  # [B*N, state_channels]
+        x = 2. * torch.rand((num_nodes, self.config.particle_dim), device=self.device) - 1.  # [B*N, state_channels]
         x[:, :self.config.N_spatial_dim] *= 2.
 
-        batch = torch.arange(batch_size).repeat_interleave(self.config.N_particles)
+        batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
 
         # normalize the polarization block to unit length without in-place slicing (keeps autograd happy)
         start = self.config.N_spatial_dim
@@ -59,51 +60,80 @@ class Trainer:
         # You can choose between random or regular initial states
         # return self.get_initial_state_regular()
         # return self.get_initial_state_random()
-        return self.particle_system.get_initial_state()
+        x, batch = self.particle_system.get_initial_state()
+        return x.to(self.device), batch.to(self.device)
 
-    def train(self, optim_steps, accumulate_loss : bool):
+    def train(self, optim_steps, accumulate_loss : bool, step_loss : bool):
         x, batch = self.get_initial_state()  # Initialize the state of the system
 
+        if torch.is_grad_enabled():
+            self.optim.zero_grad()
 
-        if accumulate_loss:
-            total_loss = 0.
+
+        if accumulate_loss or step_loss:
+            total_loss = x.new_zeros(())
             for _ in range(optim_steps):
                 output = self.particle_system(x, batch, steps=1)  # [B*N, out_dim]
-                loss = compute_loss(output, self.config, batch)
-                total_loss += loss
+                step_total_loss = output.new_zeros(())
+                if accumulate_loss:
+                    step_total_loss = step_total_loss + compute_loss(output, self.config, batch)
 
-                # add chance to loss
-                diff_move = x[:, :self.config.N_spatial_dim] - output[:, :self.config.N_spatial_dim]
-                total_loss += 0.1 * torch.mean(diff_move**2)
+                # add change to loss
+                if step_loss:
+                    diff_move = x[:, :self.config.N_spatial_dim] - output[:, :self.config.N_spatial_dim]
+                    step_total_loss = step_total_loss + 0.05 * torch.mean(diff_move**2)
 
-                x = output  # Update the state for the next step
+                if torch.is_grad_enabled():
+                    (step_total_loss / optim_steps).backward()
+                    x = output.detach()
+                    x.requires_grad_(True)
+                else:
+                    x = output
+
+                total_loss = total_loss + step_total_loss.detach()
+
             loss = total_loss / optim_steps
+            if not accumulate_loss:
+                final_loss = compute_loss(output, self.config, batch)
+                if torch.is_grad_enabled():
+                    final_loss.backward()
+                loss = loss + final_loss.detach()
         else:
             # Forward pass
             output = self.particle_system(x, batch, steps = optim_steps)  # [B*N, out_dim]
             loss = compute_loss(output, self.config, batch)
+            if torch.is_grad_enabled():
+                loss.backward()
 
 
         if torch.is_grad_enabled():
-            self.optim.zero_grad()
-            loss.backward()
             self.optim.step()
 
             self.learning_steps += 1
             self.history.append({"loss": loss.item()})
 
 
-    def rollout(self, steps) -> list:
-        # with torch.no_grad():
-        x, batch = self.get_initial_state()  # Initialize the state of the system
 
-        first_mask = batch == 0
-        states = [x[first_mask].detach().cpu().numpy()]
+    def rollout(self, steps) -> list:
+        was_training = self.particle_system.training
+        self.particle_system.eval()
+
+        x, batch = self.get_initial_state()
+        mask0 = batch == 0
+        states = [x[mask0].detach().cpu().numpy()]
 
         for _ in range(steps):
-            output = self.particle_system(x, batch, steps=1)  # [B*N, out_dim]
-            states.append(output[first_mask].detach().cpu().numpy())
-            x = output  # Update the state for the next step
+            x.requires_grad_(True)        # allow state grads for Hamiltonian step
+            out = self.particle_system(x, batch, steps=1)
+            states.append(out[mask0].detach().cpu().numpy())
+            x = out.detach()              # break the graph so it doesn’t affect training
 
+        if was_training:
+            self.particle_system.train()
         return states
         
+
+    def save_model(self, path):
+        torch.save(self.particle_system.state_dict(), path)
+        # save the config as well
+        torch.save(self.config, path + "_config.pt")
