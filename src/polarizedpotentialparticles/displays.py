@@ -4,6 +4,7 @@ from matplotlib.animation import FuncAnimation
 import panel as pn
 import matplotlib.pyplot as plt
 import torch
+import numpy as np
 from polarizedpotentialparticles.trainer import Trainer
 from polarizedpotentialparticles.losses import gaussian_splat_from_image, gaussian_splat, gaussian_splat_data
 from pathlib import Path
@@ -18,7 +19,7 @@ class Displayer:
             return state[0]
         return state
 
-    def plot_loss(self):
+    def loss(self):
         losses = [h["loss"] for h in self.trainer.history]
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(losses, '.', label="Loss")
@@ -27,15 +28,21 @@ class Displayer:
         ax.set_ylabel("Loss")
         ax.legend()
         ax.set_title("Training Loss Over Time")
-
-        return fig
-
-    def display_loss(self):
-        fig = self.plot_loss()
+        plt.close(fig)
+        return pn.panel(fig, width=600, height=400)
+    
+    def accuracy(self):
+        accuracies = [h.get("accuracy", 0) for h in self.trainer.history]
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(accuracies, '.', label="Accuracy")
+        ax.set_xlabel("Training Steps")
+        ax.set_ylabel("Accuracy")
+        ax.legend()
+        ax.set_title("Training Accuracy Over Time")
         plt.close(fig)
         return pn.panel(fig, width=600, height=400)
 
-    def display_rollout(self, rollout : list):
+    def rollout(self, rollout : list):
         # Create an animation of the particle positions over time
         fig, ax = plt.subplots(figsize=(6, 6))
         scat = ax.scatter([], [], s=100)  # Initialize an empty scatter plot
@@ -64,7 +71,7 @@ class Displayer:
 
 
 
-    def display_rollout_image(self, rollout : list):
+    def rollout_image(self, rollout : list):
         # Create an animation of the particle positions over time
         fig, ax = plt.subplots(figsize=(6, 6))
         scat = ax.scatter([], [], s=100)  # Initialize an empty scatter plot
@@ -98,7 +105,7 @@ class Displayer:
         return pn.panel("animation.gif", width=600, height=600)
 
 
-    def display_rollout_image_gauss(self, rollout : list):
+    def rollout_image_gauss(self, rollout : list):
         fig, ax = plt.subplots(figsize=(6, 6))
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(-1.1, 1.1)
@@ -122,7 +129,7 @@ class Displayer:
         plt.close(fig)
         return pn.panel("animation_gauss.gif", width=600, height=600)
     
-    def display_rollout_image_gauss_difference(self, rollout : list):
+    def rollout_image_gauss_difference(self, rollout : list):
         fig, ax = plt.subplots(figsize=(6, 6))
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(-1.1, 1.1)
@@ -153,7 +160,7 @@ class Displayer:
         return pn.panel("animation_gauss_difference.gif", width=600, height=600)
 
 
-    def display_rollout_as_static(self, rollout : list):
+    def rollout_as_static(self, rollout : list):
         # Plot every ten frames of the particles
         fig, ax = plt.subplots(figsize=(6, 6))
         num_frames = len(range(0, len(rollout), 10))
@@ -183,7 +190,7 @@ class Displayer:
 
         return pn.panel(fig, width=600, height=600)
     
-    def display_rollout_3d(self, rollout : list):
+    def rollout_3d(self, rollout : list):
 
         fig, ax = plt.subplots(figsize=(6, 6), subplot_kw={'projection': '3d'})
 
@@ -205,7 +212,50 @@ class Displayer:
         return pn.panel("animation_3d.gif", width=600, height=600)
 
 
+    def final_state(self, rollout : list):
+        first_state = self._state_for_display(rollout[0])
+        final_state = self._state_for_display(rollout[-1])
+        first_pos = first_state[:, :2]
+        pos = final_state[:, :2]
 
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.scatter(first_pos[:, 0], first_pos[:, 1], s=100, alpha=0.5, c="Red", label="Initial State")  # Plot the positions for the first frame
+        ax.scatter(pos[:, 0], pos[:, 1], s=100, alpha=0.5, c="Blue", label="Final State")  # Plot the positions for the final frame
+        ax.set_xlim(-1.1, 1.1)
+        ax.set_ylim(-1.1, 1.1)
+        # remove axes
+        ax.axis('off')
+        ax.set_title("First vs. Final State")
+        ax.legend()
+
+
+        plt.close(fig)
+        return pn.panel(fig, width=600, height=600)
 
     def display_multiple(self, panels: list):
-        return pn.Row(*panels, width=600, height=600)
+        # Normalize all inputs to Panel objects so mixed pane types work.
+        panel_objects = [pn.panel(p) for p in panels]
+
+        if len(panel_objects) == 0:
+            return pn.Spacer(width=1, height=1)
+
+        # For small sets keep a single compact row.
+        if len(panel_objects) <= 3:
+            return pn.FlexBox(
+                *panel_objects,
+                flex_wrap="nowrap",
+                justify_content="flex-start",
+                align_items="flex-start",
+                gap="10px",
+            )
+
+        # For larger sets wrap tightly instead of stretching columns,
+        # which avoids large empty gutters between panes.
+        return pn.FlexBox(
+            *panel_objects,
+            flex_wrap="wrap",
+            justify_content="flex-start",
+            align_items="flex-start",
+            align_content="flex-start",
+            gap="10px",
+        )
