@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Training Dashboards</title>
+	<style>
+		:root {
+			--bg: #f7f7f2;
+			--card: #ffffff;
+			--ink: #1f2933;
+			--muted: #52606d;
+			--line: #d9e2ec;
+			--accent: #0b6e4f;
+			--accent-soft: #d8f3e8;
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			font-family: "Avenir Next", "Segoe UI", sans-serif;
+			background:
+				radial-gradient(circle at 0 0, #edf7f3 0%, transparent 45%),
+				radial-gradient(circle at 100% 100%, #fff5e6 0%, transparent 42%),
+				var(--bg);
+			color: var(--ink);
+			min-height: 100vh;
+		}
+
+		.page {
+			max-width: 1180px;
+			margin: 0 auto;
+			padding: 24px 16px;
+		}
+
+		.header {
+			margin-bottom: 16px;
+		}
+
+		h1 {
+			margin: 0;
+			font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+			letter-spacing: 0.02em;
+		}
+
+		.subtitle {
+			margin-top: 6px;
+			color: var(--muted);
+			font-size: 0.95rem;
+		}
+
+		.layout {
+			display: grid;
+			grid-template-columns: 320px 1fr;
+			gap: 16px;
+			align-items: start;
+		}
+
+		.card {
+			background: var(--card);
+			border: 1px solid var(--line);
+			border-radius: 14px;
+			box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+			padding: 14px;
+		}
+
+		label {
+			display: block;
+			font-weight: 600;
+			margin-bottom: 6px;
+			font-size: 0.92rem;
+		}
+
+		input,
+		select,
+		button {
+			width: 100%;
+			border-radius: 10px;
+			border: 1px solid var(--line);
+			padding: 9px 10px;
+			font: inherit;
+			background: #fff;
+			color: inherit;
+		}
+
+		input:focus,
+		select:focus,
+		button:focus {
+			outline: 2px solid var(--accent-soft);
+			border-color: var(--accent);
+		}
+
+		.actions {
+			display: flex;
+			gap: 8px;
+			margin-top: 10px;
+		}
+
+		.actions button,
+		.actions a {
+			flex: 1;
+			text-align: center;
+			text-decoration: none;
+			display: inline-block;
+			border-radius: 10px;
+			padding: 9px 10px;
+			font-weight: 600;
+		}
+
+		.actions button {
+			background: var(--accent);
+			color: #fff;
+			border: 1px solid var(--accent);
+			cursor: pointer;
+		}
+
+		.actions a {
+			border: 1px solid var(--line);
+			color: var(--ink);
+			background: #fff;
+		}
+
+		.meta {
+			margin-top: 12px;
+			font-size: 0.88rem;
+			color: var(--muted);
+			line-height: 1.4;
+			min-height: 4.5em;
+		}
+
+		.viewer {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+
+		.status {
+			margin: 0;
+			color: var(--muted);
+			font-size: 0.9rem;
+		}
+
+		iframe {
+			width: 100%;
+			min-height: 72vh;
+			border: 1px solid var(--line);
+			border-radius: 12px;
+			background: #fff;
+		}
+
+		@media (max-width: 900px) {
+			.layout {
+				grid-template-columns: 1fr;
+			}
+
+			iframe {
+				min-height: 64vh;
+			}
+		}
+	</style>
+</head>
+<body>
+	<main class="page">
+		<header class="header">
+			<h1>Training Dashboards</h1>
+			<p class="subtitle">Static browser for exported Panel HTML runs hosted in this repository.</p>
+		</header>
+
+		<section class="layout">
+			<aside class="card">
+				<label for="search">Filter runs</label>
+				<input id="search" type="search" placeholder="Type run id or title">
+
+				<label for="run-select" style="margin-top: 10px;">Select run</label>
+				<select id="run-select"></select>
+
+				<div class="actions">
+					<button id="open-btn" type="button">Open</button>
+					<a id="direct-link" href="#" target="_blank" rel="noopener noreferrer">Open Tab</a>
+				</div>
+
+				<div id="run-meta" class="meta">Loading manifest...</div>
+			</aside>
+
+			<section class="viewer">
+				<p id="status" class="status">Preparing dashboard viewer...</p>
+				<iframe id="frame" title="Selected dashboard" loading="lazy"></iframe>
+			</section>
+		</section>
+	</main>
+
+	<script>
+		const manifestPath = "manifest.json";
+		const searchInput = document.getElementById("search");
+		const select = document.getElementById("run-select");
+		const openBtn = document.getElementById("open-btn");
+		const directLink = document.getElementById("direct-link");
+		const meta = document.getElementById("run-meta");
+		const frame = document.getElementById("frame");
+		const statusText = document.getElementById("status");
+
+		let allRuns = [];
+		let filteredRuns = [];
+
+		function updateMeta(run) {
+			if (!run) {
+				meta.textContent = "No run selected.";
+				return;
+			}
+
+			const parts = [];
+			parts.push(`id: ${run.id}`);
+			if (run.updated_at) {
+				parts.push(`updated: ${run.updated_at}`);
+			}
+			if (run.description) {
+				parts.push(run.description);
+			}
+			meta.textContent = parts.join(" | ");
+		}
+
+		function loadRun(run, pushHash = true) {
+			if (!run) {
+				statusText.textContent = "No run selected.";
+				frame.removeAttribute("src");
+				directLink.href = "#";
+				updateMeta(null);
+				return;
+			}
+
+			frame.src = run.path;
+			directLink.href = run.path;
+			statusText.textContent = `Viewing ${run.title || run.id}`;
+			updateMeta(run);
+
+			if (pushHash) {
+				const encoded = encodeURIComponent(run.id);
+				window.location.hash = `run=${encoded}`;
+			}
+		}
+
+		function populateSelect(runs) {
+			select.innerHTML = "";
+
+			if (runs.length === 0) {
+				const empty = document.createElement("option");
+				empty.value = "";
+				empty.textContent = "No runs available";
+				select.appendChild(empty);
+				openBtn.disabled = true;
+				loadRun(null, false);
+				return;
+			}
+
+			openBtn.disabled = false;
+			runs.forEach((run, index) => {
+				const option = document.createElement("option");
+				option.value = String(index);
+				option.textContent = `${run.title || run.id} (${run.id})`;
+				select.appendChild(option);
+			});
+		}
+
+		function applyFilter() {
+			const q = searchInput.value.trim().toLowerCase();
+			filteredRuns = allRuns.filter((run) => {
+				const hay = `${run.id} ${run.title || ""} ${run.description || ""}`.toLowerCase();
+				return hay.includes(q);
+			});
+			populateSelect(filteredRuns);
+
+			if (filteredRuns.length > 0) {
+				loadRun(filteredRuns[0], false);
+			}
+		}
+
+		function runByHash() {
+			const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+			const id = params.get("run");
+			if (!id) {
+				return null;
+			}
+			const decoded = decodeURIComponent(id);
+			return allRuns.find((run) => run.id === decoded) || null;
+		}
+
+		async function init() {
+			try {
+				const response = await fetch(manifestPath, { cache: "no-store" });
+				if (!response.ok) {
+					throw new Error(`Manifest fetch failed (${response.status})`);
+				}
+
+				const manifest = await response.json();
+				const runs = Array.isArray(manifest.runs) ? manifest.runs : [];
+				allRuns = runs;
+				filteredRuns = runs;
+				populateSelect(filteredRuns);
+
+				if (runs.length === 0) {
+					statusText.textContent = "No dashboards were found. Add files under docs/runs/<run_id>/display.html and regenerate manifest.json.";
+					return;
+				}
+
+				const fromHash = runByHash();
+				if (fromHash) {
+					const idx = filteredRuns.findIndex((run) => run.id === fromHash.id);
+					if (idx >= 0) {
+						select.value = String(idx);
+					}
+					loadRun(fromHash, false);
+				} else {
+					loadRun(filteredRuns[0], false);
+				}
+			} catch (error) {
+				statusText.textContent = `Failed to load manifest: ${error.message}`;
+				meta.textContent = "Create docs/manifest.json using scripts/generate_dashboard_manifest.py.";
+				openBtn.disabled = true;
+			}
+		}
+
+		openBtn.addEventListener("click", () => {
+			const idx = Number(select.value);
+			if (Number.isNaN(idx) || !filteredRuns[idx]) {
+				return;
+			}
+			loadRun(filteredRuns[idx]);
+		});
+
+		select.addEventListener("change", () => {
+			const idx = Number(select.value);
+			if (Number.isNaN(idx) || !filteredRuns[idx]) {
+				return;
+			}
+			loadRun(filteredRuns[idx]);
+		});
+
+		searchInput.addEventListener("input", applyFilter);
+
+		window.addEventListener("hashchange", () => {
+			const run = runByHash();
+			if (run) {
+				loadRun(run, false);
+			}
+		});
+
+		init();
+	</script>
+</body>
+</html>

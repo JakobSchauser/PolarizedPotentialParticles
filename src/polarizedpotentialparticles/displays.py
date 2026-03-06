@@ -85,7 +85,7 @@ class Displayer:
             pos = self._state_for_display(rollout[frame])[:, :2]  # Get the positions for the current frame
 
             scat.set_offsets(pos)  # Update the scatter plot with new positions
-            
+            ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return scat, 
     
         anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
@@ -114,6 +114,7 @@ class Displayer:
             ro = torch.tensor(ro)
             particle_grid = gaussian_splat_data(ro)
             im.set_data(particle_grid)
+            ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return im,
 
         anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
