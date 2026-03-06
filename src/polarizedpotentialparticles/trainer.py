@@ -6,6 +6,78 @@ from torch_geometric.nn import radius_graph
 
 import torch
 
+
+class StatePool:
+    def __init__(self, capacity: int, batch_size: int, config: Config, device: torch.device, seed_fn, reseed_count: int = 1):
+        self.capacity = capacity
+        self.batch_size = batch_size
+        self.config = config
+        self.device = device
+        self.seed_fn = seed_fn
+        self.reseed_count = reseed_count
+        self.states = []
+        self._write_idx = 0
+        self._warm()
+
+    def __len__(self):
+        return len(self.states)
+
+    def add(self, states):
+        for state in states:
+            s = state.detach().cpu().clone()
+            if len(self.states) < self.capacity:
+                self.states.append(s)
+            else:
+                self.states[self._write_idx] = s
+                self._write_idx = (self._write_idx + 1) % self.capacity
+
+    def set(self, indices, states):
+        for i, state in zip(indices, states):
+            self.states[i] = state.detach().cpu().clone()
+
+    def _split_graphs(self, x, batch):
+        return [x[batch == b] for b in torch.unique(batch)]
+
+    def _stack_graphs(self, graph_states):
+        x = torch.cat(graph_states, dim=0).to(self.device)
+        n = graph_states[0].shape[0]
+        batch = torch.arange(len(graph_states), device=self.device).repeat_interleave(n)
+        x.requires_grad_(True)
+        return x, batch
+
+    def _graph_loss(self, state):
+        s = state.to(self.device)
+        b = torch.zeros(s.shape[0], dtype=torch.long, device=self.device)
+        return compute_loss(s, self.config, b).detach().item()
+
+    def _seed_graph(self):
+        x_seed, batch_seed = self.seed_fn()
+        return self._split_graphs(x_seed, batch_seed)[0].detach().cpu().clone()
+
+    def _warm(self):
+        while len(self.states) < self.capacity:
+            self.add([self._seed_graph()])
+
+    def sample_batch(self):
+        if self.batch_size <= len(self.states):
+            idxs = torch.randperm(len(self.states))[:self.batch_size].tolist()
+        else:
+            idxs = torch.randint(0, len(self.states), (self.batch_size,)).tolist()
+
+        sampled = [self.states[i].clone() for i in idxs]
+        losses = torch.tensor([self._graph_loss(g) for g in sampled])
+        order = torch.argsort(losses, descending=True).tolist()
+
+        seed_graph = self._seed_graph()
+        for j in range(min(self.reseed_count, len(order))):
+            sampled[order[j]] = seed_graph.clone()
+
+        x, batch = self._stack_graphs(sampled)
+        return idxs, x, batch
+
+    def writeback(self, indices, x_out, batch_out):
+        self.set(indices, self._split_graphs(x_out.detach(), batch_out))
+
 class Trainer:
     def __init__(self, config : Config):
         self.config = config
@@ -18,6 +90,17 @@ class Trainer:
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)s
+
+        self.state_pool = None
+        if self.config.loss_config.use_state_pool:
+            self.state_pool = StatePool(
+                capacity=128,
+                batch_size=self.config.simulation_config.batch_size,
+                config=self.config,
+                device=self.device,
+                seed_fn=self.get_initial_state,
+                reseed_count=1,
+            )
 
     def get_nbs(self, x, batch):
         # get all particles within a certain radius as neighbors per graph in the batch
@@ -62,10 +145,13 @@ class Trainer:
         # return self.get_initial_state_random()
         x, batch = self.particle_system.get_initial_state()
         return x.to(self.device), batch.to(self.device)
-    
 
     def train_accumulated(self, optim_steps, accumulate_loss: bool, step_loss: bool):
-        x, batch = self.get_initial_state()
+        if self.state_pool is None:
+            x, batch = self.get_initial_state()
+            pool_indices = None
+        else:
+            pool_indices, x, batch = self.state_pool.sample_batch()
 
         if torch.is_grad_enabled():
             self.optim.zero_grad()
@@ -108,8 +194,15 @@ class Trainer:
             }
         )
 
+        if self.state_pool is not None:
+            self.state_pool.writeback(pool_indices, output, batch)
+
     def train_unaccumulated(self, optim_steps):
-        x, batch = self.get_initial_state()
+        if self.state_pool is None:
+            x, batch = self.get_initial_state()
+            pool_indices = None
+        else:
+            pool_indices, x, batch = self.state_pool.sample_batch()
 
         if torch.is_grad_enabled():
             self.optim.zero_grad()
@@ -121,6 +214,9 @@ class Trainer:
             self.optim.step()
             self.learning_steps += 1
             self.history.append({"loss": loss.item()})
+
+        if self.state_pool is not None:
+            self.state_pool.writeback(pool_indices, output, batch)
 
     def train(self, optim_steps, accumulate_loss : bool, step_loss : bool):
         if accumulate_loss or step_loss:
