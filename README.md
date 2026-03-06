@@ -21,3 +21,40 @@ Lessons learned:
 MAYBE:
 - Hidden states as GRN?
 - Cell division
+
+## Static Dashboard Viewer (GitHub Pages)
+
+This repository includes a minimal static dashboard picker for exported Panel HTML files.
+
+### Expected layout
+
+- `docs/index.html` - picker UI
+- `docs/manifest.json` - generated run index
+- `docs/runs/<run_id>/display.html` - exported dashboards
+
+### Add a new run
+
+1. Copy your exported dashboard into `docs/runs/<run_id>/display.html`.
+2. Regenerate the manifest:
+
+```bash
+python scripts/generate_dashboard_manifest.py
+```
+
+3. Commit `docs/runs/...` and `docs/manifest.json`.
+
+### Optional metadata
+
+You can place `docs/runs/<run_id>/meta.json` to enrich list entries.
+
+Example:
+
+```json
+{
+	"title": "saving_test",
+	"description": "Quick smoke-test training run",
+	"tags": ["smoke", "oval"],
+	"model_path": "notebooks/runs/saving_test/model.pt",
+	"config_path": "notebooks/runs/saving_test/model.pt_config.pt"
+}
+```
