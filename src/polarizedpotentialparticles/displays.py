@@ -12,6 +12,7 @@ from pathlib import Path
 class Displayer:
     def __init__(self, trainer: Trainer):
         self.trainer = trainer
+        self.px_size = 500
 
     def _state_for_display(self, state):
         # state may be [N, C] or [B, N, C]; display first batch if present
@@ -29,7 +30,28 @@ class Displayer:
         ax.legend()
         ax.set_title("Training Loss Over Time")
         plt.close(fig)
-        return pn.panel(fig, width=600, height=400)
+        return pn.panel(fig, width=self.px_size, height=int(self.px_size * 0.66))
+
+    def loss_types(self, normalize: bool):
+        img_losses = [h.get("img_loss", 0) for h in self.trainer.history]
+        step_losses = [h.get("step_loss", 0) for h in self.trainer.history]
+
+        if normalize:
+            max_img_loss = max(img_losses)
+            max_step_loss = max(step_losses) 
+            img_losses = [l / max_img_loss for l in img_losses]
+            step_losses = [l / max_step_loss for l in step_losses]
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(img_losses, '.', label="Image Loss")
+        ax.plot(step_losses, '.', label="Step Loss")
+        ax.set_yscale("log")
+        ax.set_xlabel("Training Steps")
+        ax.set_ylabel("Loss")
+        ax.legend()
+        ax.set_title("Training Loss Components Over Time")
+        plt.close(fig)
+        return pn.panel(fig, width=self.px_size, height=int(self.px_size * 0.66))
     
     def accuracy(self):
         accuracies = [h.get("accuracy", 0) for h in self.trainer.history]
@@ -40,7 +62,7 @@ class Displayer:
         ax.legend()
         ax.set_title("Training Accuracy Over Time")
         plt.close(fig)
-        return pn.panel(fig, width=600, height=400)
+        return pn.panel(fig, width=self.px_size, height=int(self.px_size * 0.66))
 
     def rollout(self, rollout : list):
         # Create an animation of the particle positions over time
@@ -67,7 +89,7 @@ class Displayer:
         plt.close(fig)
 
 
-        return pn.panel("animation.gif", width=600, height=600)
+        return pn.panel("animation.gif", width=self.px_size, height=self.px_size)
 
 
 
@@ -102,7 +124,7 @@ class Displayer:
         plt.close(fig)
 
 
-        return pn.panel("animation.gif", width=600, height=600)
+        return pn.panel("animation.gif", width=self.px_size, height=self.px_size)
 
 
     def rollout_image_gauss(self, rollout : list):
@@ -127,7 +149,7 @@ class Displayer:
         anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
         anim.save("animation_gauss.gif", writer="pillow")
         plt.close(fig)
-        return pn.panel("animation_gauss.gif", width=600, height=600)
+        return pn.panel("animation_gauss.gif", width=self.px_size, height=self.px_size)
     
     def rollout_image_gauss_difference(self, rollout : list):
         fig, ax = plt.subplots(figsize=(6, 6))
@@ -157,7 +179,7 @@ class Displayer:
         anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
         anim.save("animation_gauss_difference.gif", writer="pillow")
         plt.close(fig)
-        return pn.panel("animation_gauss_difference.gif", width=600, height=600)
+        return pn.panel("animation_gauss_difference.gif", width=self.px_size, height=self.px_size)
 
 
     def rollout_as_static(self, rollout : list):
@@ -188,7 +210,7 @@ class Displayer:
 
 
 
-        return pn.panel(fig, width=600, height=600)
+        return pn.panel(fig, width=self.px_size, height=self.px_size)
     
     def rollout_3d(self, rollout : list):
 
@@ -230,7 +252,7 @@ class Displayer:
 
 
         plt.close(fig)
-        return pn.panel(fig, width=600, height=600)
+        return pn.panel(fig, width=self.px_size, height=self.px_size)
 
     def display_multiple(self, panels: list):
         # Normalize all inputs to Panel objects so mixed pane types work.
@@ -246,7 +268,7 @@ class Displayer:
                 flex_wrap="nowrap",
                 justify_content="flex-start",
                 align_items="flex-start",
-                gap="10px",
+                gap="0px",
             )
 
         # For larger sets wrap tightly instead of stretching columns,
@@ -257,5 +279,5 @@ class Displayer:
             justify_content="flex-start",
             align_items="flex-start",
             align_content="flex-start",
-            gap="10px",
+            gap="0px",
         )

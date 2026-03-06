@@ -14,10 +14,10 @@ class Trainer:
         self.particle_system = HamiltonianParticle(config).to(self.device)
         # self.particle_system = PolarizedHamiltonianParticle(config)
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.00003)
+        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0001)
         self.learning_steps = 0
 
-        self.history = []  # to store training history (e.g., losses)
+        self.history = []  # to store training history (e.g., losses)s
 
     def get_nbs(self, x, batch):
         # get all particles within a certain radius as neighbors per graph in the batch
@@ -70,36 +70,43 @@ class Trainer:
         if torch.is_grad_enabled():
             self.optim.zero_grad()
 
-        total_loss = x.new_zeros(())
-        for i in range(optim_steps):
-            output = self.particle_system(x, batch, steps=1)
-            step_total_loss = output.new_zeros(())
+        output, step_history = self.particle_system(
+            x,
+            batch,
+            steps=optim_steps,
+            return_history=True,
+        )
 
-            if accumulate_loss:
-                step_total_loss = step_total_loss + compute_loss(output, self.config, batch)
+        if accumulate_loss:
+            img_loss_t = [compute_loss(state, self.config, batch) for state in step_history]
+            img_loss_t = torch.stack(img_loss_t).mean()
+        else:
+            img_loss_t = compute_loss(output, self.config, batch)
 
-            if step_loss:
-                diff_move = x[:, :self.config.N_spatial_dim] - output[:, :self.config.N_spatial_dim]
-                step_total_loss = step_total_loss + 0.05 * torch.mean(diff_move**2)
+        step_loss_t = output.new_zeros(())
+        if step_loss:
+            # step_history is a Python list of tensors; stack before computing temporal diffs.
+            states = torch.stack([x, *step_history], dim=0)
+            spatial = states[:, :, :self.config.N_spatial_dim]
+            diff_move = spatial[1:] - spatial[:-1]
+            step_loss_t = 0.05 * torch.mean(diff_move**2)
 
-            if (not accumulate_loss) and (i == optim_steps - 1):
-                step_total_loss = step_total_loss + compute_loss(output, self.config, batch)
 
-            if torch.is_grad_enabled():
-                (step_total_loss / optim_steps).backward()
-                x = output.detach()
-                x.requires_grad_(True)
-            else:
-                x = output
-
-            total_loss = total_loss + step_total_loss.detach()
-
-        loss = total_loss / optim_steps
+        total_loss = img_loss_t + step_loss_t
 
         if torch.is_grad_enabled():
+            total_loss.backward()
             self.optim.step()
             self.learning_steps += 1
-            self.history.append({"loss": loss.item()})
+
+        self.history.append(
+            {
+                "loss": total_loss.item(),
+                "total_loss": total_loss.item(),
+                "img_loss": img_loss_t.item(),
+                "step_loss": step_loss_t.item(),
+            }
+        )
 
     def train_unaccumulated(self, optim_steps):
         x, batch = self.get_initial_state()

@@ -239,11 +239,13 @@ class HamiltonianParticle(torch.nn.Module):
         return x, batch
     
 
-    def forward(self, x, batch, steps):
+    def forward(self, x, batch, steps, return_history: bool = False):
         assert self.message_conv is not None 
         assert self.message_to_output_layer is not None
         # x: [B*N, state_channels]
         # batch: [B*N]
+
+        history = [] if return_history else None
 
         for _ in range(steps):
             edge_index = radius_graph(
@@ -256,6 +258,12 @@ class HamiltonianParticle(torch.nn.Module):
             output = self.message_conv(x, edge_index, batch=batch)  # [B*N, out_channels]
 
             x = self.update(output, x)
+
+            if return_history:
+                history.append(x)
+
+        if return_history:
+            return x, history
 
         return x
 

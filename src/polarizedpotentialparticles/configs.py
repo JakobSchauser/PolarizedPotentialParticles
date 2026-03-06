@@ -24,6 +24,8 @@ class LossConfig:
 
     sigma = 0.02
 
+    use_state_pool : bool = False
+
     
 
 @dataclass

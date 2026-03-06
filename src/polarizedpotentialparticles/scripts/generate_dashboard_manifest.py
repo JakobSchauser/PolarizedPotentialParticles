@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,7 +26,12 @@ def _read_optional_meta(meta_path: Path) -> dict[str, Any]:
         return {}
 
 
-def build_manifest(docs_dir: Path) -> dict[str, Any]:
+def _repo_root() -> Path:
+    # File location: <repo>/src/polarizedpotentialparticles/scripts/generate_dashboard_manifest.py
+    return Path(__file__).resolve().parents[3]
+
+
+def _build_manifest_payload(docs_dir: Path) -> dict[str, Any]:
     runs_dir = docs_dir / "runs"
     records: list[dict[str, Any]] = []
 
@@ -64,29 +68,19 @@ def build_manifest(docs_dir: Path) -> dict[str, Any]:
     }
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--docs-dir",
-        default="docs",
-        help="Path to the docs directory that contains runs/ (default: docs)",
-    )
-    parser.add_argument(
-        "--output",
-        default="manifest.json",
-        help="Output file path relative to docs-dir (default: manifest.json)",
-    )
-    return parser.parse_args()
+def build_manifest() -> None:
+    """Build docs/manifest.json from docs/runs/*/display.html.
 
+    This function is intentionally argument-free so it can be imported and called
+    directly from other Python modules.
+    """
 
-def main() -> int:
-    args = parse_args()
-    docs_dir = Path(args.docs_dir).resolve()
+    docs_dir = _repo_root() / "docs"
     docs_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest = build_manifest(docs_dir)
+    manifest = _build_manifest_payload(docs_dir)
 
-    output_path = docs_dir / args.output
+    output_path = docs_dir / "manifest.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2)
@@ -94,8 +88,7 @@ def main() -> int:
 
     print(f"Wrote {output_path}")
     print(f"Indexed {len(manifest['runs'])} runs")
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    build_manifest()
