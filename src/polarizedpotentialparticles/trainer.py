@@ -62,55 +62,65 @@ class Trainer:
         # return self.get_initial_state_random()
         x, batch = self.particle_system.get_initial_state()
         return x.to(self.device), batch.to(self.device)
+    
 
-    def train(self, optim_steps, accumulate_loss : bool, step_loss : bool):
-        x, batch = self.get_initial_state()  # Initialize the state of the system
+    def train_accumulated(self, optim_steps, accumulate_loss: bool, step_loss: bool):
+        x, batch = self.get_initial_state()
 
         if torch.is_grad_enabled():
             self.optim.zero_grad()
 
+        total_loss = x.new_zeros(())
+        for i in range(optim_steps):
+            output = self.particle_system(x, batch, steps=1)
+            step_total_loss = output.new_zeros(())
 
-        if accumulate_loss or step_loss:
-            total_loss = x.new_zeros(())
-            for _ in range(optim_steps):
-                output = self.particle_system(x, batch, steps=1)  # [B*N, out_dim]
-                step_total_loss = output.new_zeros(())
-                if accumulate_loss:
-                    step_total_loss = step_total_loss + compute_loss(output, self.config, batch)
+            if accumulate_loss:
+                step_total_loss = step_total_loss + compute_loss(output, self.config, batch)
 
-                # add change to loss
-                if step_loss:
-                    diff_move = x[:, :self.config.N_spatial_dim] - output[:, :self.config.N_spatial_dim]
-                    step_total_loss = step_total_loss + 0.05 * torch.mean(diff_move**2)
+            if step_loss:
+                diff_move = x[:, :self.config.N_spatial_dim] - output[:, :self.config.N_spatial_dim]
+                step_total_loss = step_total_loss + 0.05 * torch.mean(diff_move**2)
 
-                if torch.is_grad_enabled():
-                    (step_total_loss / optim_steps).backward()
-                    x = output.detach()
-                    x.requires_grad_(True)
-                else:
-                    x = output
+            if (not accumulate_loss) and (i == optim_steps - 1):
+                step_total_loss = step_total_loss + compute_loss(output, self.config, batch)
 
-                total_loss = total_loss + step_total_loss.detach()
-
-            loss = total_loss / optim_steps
-            if not accumulate_loss:
-                final_loss = compute_loss(output, self.config, batch)
-                if torch.is_grad_enabled():
-                    final_loss.backward()
-                loss = loss + final_loss.detach()
-        else:
-            # Forward pass
-            output = self.particle_system(x, batch, steps = optim_steps)  # [B*N, out_dim]
-            loss = compute_loss(output, self.config, batch)
             if torch.is_grad_enabled():
-                loss.backward()
+                (step_total_loss / optim_steps).backward()
+                x = output.detach()
+                x.requires_grad_(True)
+            else:
+                x = output
 
+            total_loss = total_loss + step_total_loss.detach()
+
+        loss = total_loss / optim_steps
 
         if torch.is_grad_enabled():
             self.optim.step()
-
             self.learning_steps += 1
             self.history.append({"loss": loss.item()})
+
+    def train_unaccumulated(self, optim_steps):
+        x, batch = self.get_initial_state()
+
+        if torch.is_grad_enabled():
+            self.optim.zero_grad()
+
+        output = self.particle_system(x, batch, steps=optim_steps)
+        loss = compute_loss(output, self.config, batch)
+        if torch.is_grad_enabled():
+            loss.backward()
+            self.optim.step()
+            self.learning_steps += 1
+            self.history.append({"loss": loss.item()})
+
+    def train(self, optim_steps, accumulate_loss : bool, step_loss : bool):
+        if accumulate_loss or step_loss:
+            self.train_accumulated(optim_steps, accumulate_loss, step_loss)
+            return
+
+        self.train_unaccumulated(optim_steps)
 
 
 
@@ -137,3 +147,11 @@ class Trainer:
         torch.save(self.particle_system.state_dict(), path)
         # save the config as well
         torch.save(self.config, path + "_config.pt")
+
+    @staticmethod
+    def load_model(path):
+        # load the config first
+        config = torch.load(path + "_config.pt", weights_only=False)
+        trainer = Trainer(config)
+        trainer.particle_system.load_state_dict(torch.load(path))
+        return trainer

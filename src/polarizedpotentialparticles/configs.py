@@ -13,11 +13,9 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 0
-    message_out_channels : int = 8
-
-    out_dim : int = 1 + 2 * 1 + 8  # dx, dy, dpol_x, dpol_y, d_hidden1...
-    zero_initialization : bool = True
+    hidden_dim : int = 1
+    message_latent_dim : int = 8
+    zero_initialization : bool = False
 
 
 @dataclass
@@ -36,7 +34,7 @@ class Config:
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    N_particles : int = 128
+    N_particles : int = 55
 
     neighbor_radius : float = 0.1
 
@@ -67,3 +65,8 @@ class Config:
     @property
     def particle_dim(self) -> int:
         return self.N_spatial_dim + self.state_dim
+    
+    @property
+    def out_dim(self) -> int:
+        return self.N_spatial_dim * self.N_polarizations + self.particle_config.hidden_dim
+

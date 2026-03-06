@@ -18,7 +18,8 @@ def uniform_circular_distribution(num_particles, device=None):
 
 
 def uniform_circular_distribution_deterministic(num_particles, device=None):
-    radius=0.6
+    # radius=0.6
+    radius=0.4
 
     i = torch.arange(num_particles, device=device, dtype=torch.float32)
 
@@ -63,8 +64,8 @@ class Particle(torch.nn.Module):
         # Message NN
         self.message_conv = CustomNNConv(self.config)
         self.message_to_output_layer = torch.nn.Linear(
-            self.config.particle_config.message_out_channels,
-            self.config.particle_config.out_dim,
+            self.config.particle_config.message_latent_dim,
+            self.config.out_dim,
         )
 
         if self.config.particle_config.zero_initialization:
@@ -188,8 +189,8 @@ class HamiltonianParticle(torch.nn.Module):
         # Message NN
         self.message_conv = HNNConv(self.config)
         self.message_to_output_layer = torch.nn.Linear(
-            self.config.particle_config.message_out_channels,
-            self.config.particle_config.out_dim,
+            self.config.particle_config.message_latent_dim,
+            self.config.out_dim,
         )
 
         if self.config.particle_config.zero_initialization:
@@ -281,8 +282,8 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
         # Message NN
         self.message_conv = PolarizedHNNConv(self.config)
         self.message_to_output_layer = torch.nn.Linear(
-            self.config.particle_config.message_out_channels,
-            self.config.particle_config.out_dim,
+            self.config.particle_config.message_latent_dim,
+            self.config.out_dim,
         )
 
         if self.config.particle_config.zero_initialization:

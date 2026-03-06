@@ -23,7 +23,7 @@ class CustomNNConv(MessagePassing):
         state_channels = config.state_dim
 
 
-        out_channels = config.particle_config.message_out_channels
+        out_channels = config.particle_config.message_latent_dim
 
 
         mlp1 = []
