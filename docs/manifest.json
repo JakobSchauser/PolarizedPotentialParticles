@@ -1,6 +1,22 @@
 {
-  "generated_at": "2026-03-06T14:06:22+00:00",
+  "generated_at": "2026-03-08T22:07:44+00:00",
   "runs": [
+    {
+      "id": "hidden_channel_test",
+      "title": "hidden_channel_test",
+      "path": "runs/hidden_channel_test/display.html",
+      "updated_at": "2026-03-08T22:07:44+00:00",
+      "description": "",
+      "tags": []
+    },
+    {
+      "id": "pool_test2",
+      "title": "pool_test2",
+      "path": "runs/pool_test2/display.html",
+      "updated_at": "2026-03-06T16:07:33+00:00",
+      "description": "",
+      "tags": []
+    },
     {
       "id": "pool_test1",
       "title": "pool_test1",

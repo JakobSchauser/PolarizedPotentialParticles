@@ -270,103 +270,89 @@ class HamiltonianParticle(torch.nn.Module):
 
 
 
-class PolarizedHamiltonianParticle(torch.nn.Module):
-    def __init__(self, config : Config):
-        super().__init__()
-        self.config = config
-        self.device = torch.device(config.device)
+# class PolarizedHamiltonianParticle(torch.nn.Module):
+#     def __init__(self, config : Config):
+#         super().__init__()
+#         self.config = config
+#         self.device = torch.device(config.device)
 
         
-        self.message_conv : torch.nn.Module | None = None
-        self.own_state_nn : torch.nn.Module | None = None
-        self.message_to_output_layer : torch.nn.Module | None = None
+#         self.message_conv : torch.nn.Module | None = None
+#         self.own_state_nn : torch.nn.Module | None = None
+#         self.message_to_output_layer : torch.nn.Module | None = None
 
-        self.setup()
+#         self.setup()
 
-    def setup(self):
-        self.initialize_architecture()
+#     def setup(self):
+#         self.initialize_architecture()
 
-    def initialize_architecture(self):
-        # Message NN
-        self.message_conv = PolarizedHNNConv(self.config)
-        self.message_to_output_layer = torch.nn.Linear(
-            self.config.particle_config.message_latent_dim,
-            self.config.out_dim,
-        )
+#     def initialize_architecture(self):
+#         # Message NN
+#         self.message_conv = PolarizedHNNConv(self.config)
+#         self.message_to_output_layer = torch.nn.Linear(
+#             self.config.particle_config.message_latent_dim,
+#             self.config.out_dim,
+#         )
 
-        if self.config.particle_config.zero_initialization:
-            with torch.no_grad():
-                self.message_to_output_layer.weight.zero_()
-                self.message_to_output_layer.bias.zero_()
+#         if self.config.particle_config.zero_initialization:
+#             with torch.no_grad():
+#                 self.message_to_output_layer.weight.zero_()
+#                 self.message_to_output_layer.bias.zero_()
 
-    def update(self, output, x):
-        # assert self.x is not None
-        # output: [num_nodes, out_dim]
-        # [H]
+#     def update(self, output, x):
+#         update = torch.autograd.grad(
+#             outputs=output.sum(),  # sum over all particles to get a scalar Hamiltonian
+#             inputs=x,  # only take the spatial part of the state for the gradient
+#             create_graph=False,  # we need to create a graph for the gradients to compute second derivatives
+#         )[0]  # [num_nodes, state_dim]
 
-        # Hamiltonian update: compute the gradient of the Hamiltonian with respect to the state
-        update = torch.autograd.grad(
-            outputs=output.sum(),  # sum over all particles to get a scalar Hamiltonian
-            inputs=x,  # only take the spatial part of the state for the gradient
-            create_graph=False,  # we need to create a graph for the gradients to compute second derivatives
-        )[0]  # [num_nodes, state_dim]
+#         newx = x - update * 0.01
 
-        # clip the update to prevent exploding updates
-        # move_update = torch.clamp(move_update, -0.2, 0.2)
+#         # newpol = x[:, self.config.N_spatial_dim:] 
 
-        # update the state by moving in the direction of the negative gradient (gradient descent)
-        newx = x[:, :self.config.N_spatial_dim] - update[:, :self.config.N_spatial_dim] * 0.01
+#         # newstate = torch.cat((newx, newpol), dim=1)
 
+#         x = newx
 
-        # newpol = x[:, self.config.N_spatial_dim:] - update[:, self.config.N_spatial_dim:] * 0.01
+#         x.requires_grad_()  # we need to retain gradients for the updated state to compute the Hamiltonian updates in the next step
 
-        # newpol = F.normalize(newpol, p=2, dim=1, eps=1e-8)
-
-        newpol = x[:, self.config.N_spatial_dim:] 
-
-        newstate = torch.cat((newx, newpol), dim=1)
-
-        x = newstate
-
-        x.requires_grad_()  # we need to retain gradients for the updated state to compute the Hamiltonian updates in the next step
-
-        return x
+#         return x
     
-    def get_initial_state(self):
-        # make a regular grid of particles as initial state
-        batch_size = self.config.simulation_config.batch_size
-        num_nodes = batch_size * self.config.N_particles
-        x = (2.*torch.rand((num_nodes, self.config.N_spatial_dim*2), device=self.device)- 1.)*0.001  # [B*N, state_channels]
+#     def get_initial_state(self):
+#         # make a regular grid of particles as initial state
+#         batch_size = self.config.simulation_config.batch_size
+#         num_nodes = batch_size * self.config.N_particles
+#         x = (2.*torch.rand((num_nodes, self.config.N_spatial_dim*2), device=self.device)- 1.)*0.001  # [B*N, state_channels]
 
 
-        x[:, :self.config.N_spatial_dim] = uniform_circular_distribution(num_nodes, device=self.device)
+#         x[:, :self.config.N_spatial_dim] = uniform_circular_distribution(num_nodes, device=self.device)
         
 
-        # initialize the polarization block to be unit vectors pointing to the right
-        x[:, self.config.N_spatial_dim:self.config.N_spatial_dim + 1] = 1. 
-        x[:, self.config.N_spatial_dim+1:self.config.N_spatial_dim+2] = 0.
+#         # initialize the polarization block to be unit vectors pointing to the right
+#         x[:, self.config.N_spatial_dim:self.config.N_spatial_dim + 1] = 1. 
+#         x[:, self.config.N_spatial_dim+1:self.config.N_spatial_dim+2] = 0.
 
-        x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
-        batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
-        return x, batch
+#         x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
+#         batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
+#         return x, batch
     
 
-    def forward(self, x, batch, steps):
-        assert self.message_conv is not None 
-        assert self.message_to_output_layer is not None
-        # x: [B*N, state_channels]
-        # batch: [B*N]
+#     def forward(self, x, batch, steps):
+#         assert self.message_conv is not None 
+#         assert self.message_to_output_layer is not None
+#         # x: [B*N, state_channels]
+#         # batch: [B*N]
 
-        for _ in range(steps):
-            edge_index = radius_graph(
-                x[:, : self.config.N_spatial_dim],
-                r=self.config.neighbor_radius,
-                loop=False,
-                batch=batch,
-            )
+#         for _ in range(steps):
+#             edge_index = radius_graph(
+#                 x[:, : self.config.N_spatial_dim],
+#                 r=self.config.neighbor_radius,
+#                 loop=False,
+#                 batch=batch,
+#             )
 
-            output = self.message_conv(x, edge_index, batch=batch)  # [B*N, out_channels]
+#             output = self.message_conv(x, edge_index, batch=batch)  # [B*N, out_channels]
 
-            x = self.update(output, x)
+#             x = self.update(output, x)
 
-        return x
+#         return x

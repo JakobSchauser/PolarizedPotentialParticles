@@ -1,4 +1,4 @@
-from polarizedpotentialparticles.particles import Particle, HamiltonianParticle, PolarizedHamiltonianParticle
+from polarizedpotentialparticles.particles import Particle, HamiltonianParticle# PolarizedHamiltonianParticle
 from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.losses import compute_loss
 import torch.nn.functional as F
@@ -84,9 +84,9 @@ class Trainer:
         self.device = torch.device(config.device)
         # self.particle_system = Particle(config)
         self.particle_system = HamiltonianParticle(config).to(self.device)
-        # self.particle_system = PolarizedHamiltonianParticle(config)
+        # self.particle_system = PolarizedHamiltonianParticle(config).to(self.device)
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0001)
+        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.00001)
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)s
@@ -94,7 +94,7 @@ class Trainer:
         self.state_pool = None
         if self.config.loss_config.use_state_pool:
             self.state_pool = StatePool(
-                capacity=128,
+                capacity=128*10,
                 batch_size=self.config.simulation_config.batch_size,
                 config=self.config,
                 device=self.device,
@@ -112,11 +112,7 @@ class Trainer:
         )  # [2, num_edges]
         return edge_index
 
-    def loss_fn(self, output, target):
-        # Compute your loss here based on the output and the target
-        loss = torch.nn.MSELoss()(output, target)
-        return loss
-    
+
     def get_initial_state_random(self):
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles

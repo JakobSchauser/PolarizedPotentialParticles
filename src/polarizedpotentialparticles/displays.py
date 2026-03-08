@@ -125,6 +125,49 @@ class Displayer:
 
 
         return pn.panel("animation.gif", width=self.px_size, height=self.px_size)
+    
+    def rollout_image_hidden(self, rollout : list):
+        # Create an animation of the particle positions over time
+        fig, ax = plt.subplots(figsize=(6, 6))
+        scat = ax.scatter([], [], s=100)  # Initialize an empty scatter plot
+
+        x_lim = (-1.1, 1.1)
+        y_lim = (-1.1, 1.1)
+        ax.set_xlim(x_lim)
+        ax.set_ylim(y_lim)
+        
+        emoji_path = (Path(__file__).resolve().parent / "morphologies" / f"{self.trainer.config.loss_config.target}.png")
+
+        img_grid = gaussian_splat_from_image(emoji_path)
+
+        # display the image in real life coordinates
+        ax.imshow(img_grid, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=0.5)
+
+        def update(frame):
+            pos = self._state_for_display(rollout[frame])[:, :2]  # Get the positions for the current frame
+
+            colors = self._state_for_display(rollout[frame])[:, 2]  # Get the hidden state for the current frame
+
+            scat.set_offsets(pos)  # Update the scatter plot with new positions
+            scat.set_array(colors)  # Update the scatter plot with new colors based on hidden state
+            # use a colormap to convert hidden state values to colors
+            scat.set_cmap("viridis")
+            # set color limits to be the same across frames for consistency
+            _max, _min = np.max(colors), np.min(colors)
+            scat.set_clim(_min, _max)
+
+            ax.set_title(f"Frame {frame+1}/{len(rollout)}")
+            return scat, 
+    
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+
+        # show as gif in notebook
+        anim.save("animation_hidden.gif", writer="pillow")
+        plt.close(fig)
+
+
+        return pn.panel("animation_hidden.gif", width=self.px_size, height=self.px_size)
+
 
 
     def rollout_image_gauss(self, rollout : list):
@@ -253,7 +296,26 @@ class Displayer:
 
         plt.close(fig)
         return pn.panel(fig, width=self.px_size, height=self.px_size)
+    
 
+    def dashboard(self, rollout):
+        to_display = []
+
+        to_display.append(self.loss())
+        to_display.append(self.loss_types(normalize = False))
+        to_display.append(self.final_state(rollout))
+        # to_display.append(self.rollout_as_static(rollout))
+        has_hidden_dim = self.trainer.config.particle_config.hidden_dim > 0
+        if has_hidden_dim:
+            to_display.append(self.rollout_image_hidden(rollout))
+        else:
+            to_display.append(self.rollout_image(rollout))
+        to_display.append(self.rollout_image_gauss(rollout))
+        to_display.append(self.rollout_image_gauss_difference(rollout))
+
+        panel = self.display_multiple(to_display)
+
+        return panel
     def display_multiple(self, panels: list):
         # Normalize all inputs to Panel objects so mixed pane types work.
         panel_objects = [pn.panel(p) for p in panels]

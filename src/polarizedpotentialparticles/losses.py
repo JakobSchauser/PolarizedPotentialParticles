@@ -38,8 +38,6 @@ def compute_loss(output : torch.Tensor, config : Config, batch : torch.Tensor) -
     losses = []
     for b in torch.unique(batch):
         mask = batch == b
-        # losses.append(is_everyone_equidistant(pos, config))
-        # losses.append(relaxation_distance_loss(output[mask], config))
         losses.append(image_loss(output[mask], config))
 
 
@@ -62,6 +60,7 @@ def gaussian_splat(pos, grid_size=64, normalize=True):
         # normalize the grid to [0, 1]
         grid = grid / (grid.max() + 1e-8)
     return grid
+
 
 
 def gaussian_splat_data(pos,):
