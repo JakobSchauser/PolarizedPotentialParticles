@@ -35,13 +35,16 @@ def relaxation_distance_loss(output : torch.Tensor, config : Config) -> torch.Te
     return loss
 
 def compute_loss(output : torch.Tensor, config : Config, batch : torch.Tensor) -> torch.Tensor:
+    losses = compute_losses(output, config, batch)
+    return torch.stack(losses).mean()
+
+def compute_losses(output : torch.Tensor, config : Config, batch : torch.Tensor) -> list[torch.Tensor]:
     losses = []
     for b in torch.unique(batch):
         mask = batch == b
         losses.append(image_loss(output[mask], config))
+    return losses
 
-
-    return torch.stack(losses).mean()
 
 def gaussian_splat(pos, grid_size=64, normalize=True):
     sigma = 0.1

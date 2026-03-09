@@ -17,7 +17,7 @@ class Displayer:
     def _state_for_display(self, state):
         # state may be [N, C] or [B, N, C]; display first batch if present
         if hasattr(state, "shape") and len(state.shape) == 3:
-            return state[0]
+            return state[-1]
         return state
 
     def loss(self):
@@ -215,7 +215,7 @@ class Displayer:
             difference_grid = (img_grid - particle_grid)**2
             im.set_data(difference_grid)
 
-            ax.set_title(f"Diff: {difference_grid.sum().item():.4f} | frame {frame+1}/{len(rollout)}")
+            ax.set_title(f"Diff: {difference_grid.mean().item():.4f} | frame {frame+1}/{len(rollout)}")
 
             return im,
 
@@ -277,7 +277,7 @@ class Displayer:
         return pn.panel("animation_3d.gif", width=600, height=600)
 
 
-    def final_state(self, rollout : list):
+    def final_state(self, rollout : list, losses : list):
         first_state = self._state_for_display(rollout[0])
         final_state = self._state_for_display(rollout[-1])
         first_pos = first_state[:, :2]
@@ -290,7 +290,7 @@ class Displayer:
         ax.set_ylim(-1.1, 1.1)
         # remove axes
         ax.axis('off')
-        ax.set_title("First vs. Final State")
+        ax.set_title("Final State | Loss: {:.4f}".format(losses[-1]))
         ax.legend()
 
 
@@ -298,12 +298,12 @@ class Displayer:
         return pn.panel(fig, width=self.px_size, height=self.px_size)
     
 
-    def dashboard(self, rollout):
+    def dashboard(self, rollout, losses):
         to_display = []
 
         to_display.append(self.loss())
         to_display.append(self.loss_types(normalize = False))
-        to_display.append(self.final_state(rollout))
+        to_display.append(self.final_state(rollout, losses))
         # to_display.append(self.rollout_as_static(rollout))
         has_hidden_dim = self.trainer.config.particle_config.hidden_dim > 0
         if has_hidden_dim:

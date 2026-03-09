@@ -8,7 +8,7 @@ from typing import Callable, Literal
 class SimulationConfig:
     dt : float = 0.1
     steps : int = 50
-    batch_size : int = 32*2
+    batch_size : int = 32
 
 
 @dataclass
@@ -24,7 +24,7 @@ class LossConfig:
 
     sigma = 0.02
 
-    use_state_pool : bool = False
+    use_state_pool : bool = True
 
     
 

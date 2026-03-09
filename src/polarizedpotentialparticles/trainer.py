@@ -1,6 +1,6 @@
 from polarizedpotentialparticles.particles import Particle, HamiltonianParticle# PolarizedHamiltonianParticle
 from polarizedpotentialparticles.configs import Config
-from polarizedpotentialparticles.losses import compute_loss
+from polarizedpotentialparticles.losses import compute_loss, compute_losses
 import torch.nn.functional as F
 from torch_geometric.nn import radius_graph
 
@@ -86,7 +86,7 @@ class Trainer:
         self.particle_system = HamiltonianParticle(config).to(self.device)
         # self.particle_system = PolarizedHamiltonianParticle(config).to(self.device)
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.00001)
+        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0001)
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)s
@@ -99,7 +99,7 @@ class Trainer:
                 config=self.config,
                 device=self.device,
                 seed_fn=self.get_initial_state,
-                reseed_count=1,
+                reseed_count=6,
             )
 
     def get_nbs(self, x, batch):
@@ -223,7 +223,7 @@ class Trainer:
 
 
 
-    def rollout(self, steps) -> list:
+    def rollout(self, steps) -> tuple[list, list]:
         was_training = self.particle_system.training
         self.particle_system.eval()
 
@@ -239,7 +239,11 @@ class Trainer:
 
         if was_training:
             self.particle_system.train()
-        return states
+
+        losses = compute_losses(out, self.config, batch)
+        losses = [l.item() for l in losses]
+
+        return states, losses
         
 
     def save_model(self, path):
