@@ -1,6 +1,14 @@
 {
-  "generated_at": "2026-03-09T10:02:18+00:00",
+  "generated_at": "2026-03-09T10:22:22+00:00",
   "runs": [
+    {
+      "id": "hidden_channel_highlr",
+      "title": "hidden_channel_highlr",
+      "path": "runs/hidden_channel_highlr/display.html",
+      "updated_at": "2026-03-09T10:22:22+00:00",
+      "description": "",
+      "tags": []
+    },
     {
       "id": "hidden_channel_test",
       "title": "hidden_channel_test",
