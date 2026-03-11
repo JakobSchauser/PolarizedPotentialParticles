@@ -1,6 +1,14 @@
 {
-  "generated_at": "2026-03-10T13:24:31+00:00",
+  "generated_at": "2026-03-11T08:40:29+00:00",
   "runs": [
+    {
+      "id": "learned_sigma_test",
+      "title": "learned_sigma_test",
+      "path": "runs/learned_sigma_test/display.html",
+      "updated_at": "2026-03-11T08:40:29+00:00",
+      "description": "",
+      "tags": []
+    },
     {
       "id": "no_potential2",
       "title": "no_potential2",

@@ -3,6 +3,9 @@ from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.losses import compute_loss, compute_losses
 import torch.nn.functional as F
 from torch_geometric.nn import radius_graph
+import json
+from dataclasses import asdict
+
 
 import torch
 
@@ -250,6 +253,11 @@ class Trainer:
         torch.save(self.particle_system.state_dict(), path)
         # save the config as well
         torch.save(self.config, path + "_config.pt")
+
+        # also save the config as a json for easier loading without PyTorch
+
+        with open(path + "_config.json", "w") as f:
+            json.dump(asdict(self.config), f, indent=4)
 
     @staticmethod
     def load_model(path):

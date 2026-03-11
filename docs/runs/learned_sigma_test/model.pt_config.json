@@ -1,0 +1,23 @@
+{
+    "particle_config": {
+        "hidden_dim": 0,
+        "message_latent_dim": 8,
+        "zero_initialization": true
+    },
+    "simulation_config": {
+        "dt": 0.1,
+        "steps": 50,
+        "batch_size": 32
+    },
+    "loss_config": {
+        "target": "oval",
+        "use_state_pool": true
+    },
+    "N_spatial_dim": 2,
+    "N_polarizations": 1,
+    "N_particles": 55,
+    "neighbor_radius": 0.1,
+    "device": "cuda",
+    "learned_sigma": false,
+    "sigma": 0.08
+}

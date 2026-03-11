@@ -131,6 +131,33 @@
 			min-height: 4.5em;
 		}
 
+		.config-box {
+			margin-top: 10px;
+			padding: 10px;
+			border: 1px solid var(--line);
+			border-radius: 10px;
+			background: #fbfcfd;
+		}
+
+		.config-title {
+			margin: 0 0 6px;
+			font-size: 0.84rem;
+			color: var(--muted);
+			font-weight: 600;
+		}
+
+		.config-content {
+			margin: 0;
+			font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+			font-size: 0.78rem;
+			line-height: 1.35;
+			max-height: 260px;
+			overflow: auto;
+			white-space: pre-wrap;
+			word-break: break-word;
+			color: #334e68;
+		}
+
 		.viewer {
 			display: flex;
 			flex-direction: column;
@@ -183,6 +210,10 @@
 				</div>
 
 				<div id="run-meta" class="meta">Loading manifest...</div>
+				<div id="run-config" class="config-box">
+					<p id="run-config-title" class="config-title">Config JSON</p>
+					<pre id="run-config-content" class="config-content">Waiting for selection...</pre>
+				</div>
 			</aside>
 
 			<section class="viewer">
@@ -199,11 +230,67 @@
 		const openBtn = document.getElementById("open-btn");
 		const directLink = document.getElementById("direct-link");
 		const meta = document.getElementById("run-meta");
+		const runConfigTitle = document.getElementById("run-config-title");
+		const runConfigContent = document.getElementById("run-config-content");
 		const frame = document.getElementById("frame");
 		const statusText = document.getElementById("status");
 
 		let allRuns = [];
 		let filteredRuns = [];
+		let latestConfigRequest = 0;
+
+		function setConfigStatus(message, title = "Config JSON") {
+			runConfigTitle.textContent = title;
+			runConfigContent.textContent = message;
+		}
+
+		function renderConfigJson(jsonData, sourcePath) {
+			runConfigTitle.textContent = `Config JSON (${sourcePath})`;
+			runConfigContent.textContent = JSON.stringify(jsonData, null, 2);
+		}
+
+		function getRunDirFromPath(runPath) {
+			const idx = runPath.lastIndexOf("/");
+			if (idx < 0) {
+				return "";
+			}
+			return runPath.slice(0, idx);
+		}
+
+		async function loadRunConfig(run, requestId) {
+			if (!run || !run.path) {
+				if (requestId === latestConfigRequest) {
+					setConfigStatus("No run selected.");
+				}
+				return;
+			}
+
+			const runDir = getRunDirFromPath(run.path);
+			const candidates = [
+				`${runDir}/config.json`,
+				`${runDir}/model.pt_config.json`
+			];
+
+			for (const candidate of candidates) {
+				try {
+					const response = await fetch(candidate, { cache: "no-store" });
+					if (!response.ok) {
+						continue;
+					}
+					const jsonData = await response.json();
+					if (requestId === latestConfigRequest) {
+						renderConfigJson(jsonData, candidate);
+					}
+					return;
+				} catch (error) {
+					continue;
+				}
+			}
+
+			if (requestId === latestConfigRequest) {
+				setConfigStatus("No config JSON found.");
+			}
+		}
 
 		function updateMeta(run) {
 			if (!run) {
@@ -228,6 +315,8 @@
 				frame.removeAttribute("src");
 				directLink.href = "#";
 				updateMeta(null);
+				latestConfigRequest += 1;
+				setConfigStatus("No run selected.");
 				return;
 			}
 
@@ -235,6 +324,10 @@
 			directLink.href = run.path;
 			statusText.textContent = `Viewing ${run.title || run.id}`;
 			updateMeta(run);
+			latestConfigRequest += 1;
+			const requestId = latestConfigRequest;
+			setConfigStatus("Loading config JSON...");
+			loadRunConfig(run, requestId);
 
 			if (pushHash) {
 				const encoded = encodeURIComponent(run.id);

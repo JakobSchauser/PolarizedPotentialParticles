@@ -46,8 +46,8 @@ def compute_losses(output : torch.Tensor, config : Config, batch : torch.Tensor)
     return losses
 
 
-def gaussian_splat(pos, grid_size=64, normalize=True):
-    sigma = 0.1
+def gaussian_splat(pos, sigma, grid_size=64, normalize=True):
+    
     # pos: [P, 2] in [-1, 1]
     yy, xx = torch.meshgrid(
         torch.linspace(-1, 1, grid_size, device=pos.device, dtype=pos.dtype),
@@ -66,8 +66,8 @@ def gaussian_splat(pos, grid_size=64, normalize=True):
 
 
 
-def gaussian_splat_data(pos,):
-    return gaussian_splat(pos, grid_size=64, normalize=False)
+def gaussian_splat_data(pos, config : Config):
+    return gaussian_splat(pos, sigma=config.sigma, grid_size=64, normalize=False)
 
 
 def gaussian_splat_from_image(img_path, device=None):
@@ -89,7 +89,7 @@ def gaussian_splat_from_image(img_path, device=None):
 
 
     # gaussian splatting of the image
-    img_grid = gaussian_splat(img_pos, grid_size=grid_size, normalize=False) / 16.
+    img_grid = gaussian_splat(img_pos, sigma = 0.1, grid_size=grid_size, normalize=False) / 16.
 
 
     return img_grid
@@ -114,7 +114,7 @@ def image_loss(output : torch.Tensor, config : Config) -> torch.Tensor:
     # make the positions be in the same coordinate system as the image ([-1, 1])
     pos /= 1.0 
 
-    particle_grid = gaussian_splat_data(pos, )
+    particle_grid = gaussian_splat_data(pos, config=config)
 
     # print(f"Image grid max value: {img_grid.max().item():.4f}")
     # print(f"Particle grid max value: {particle_grid.max().item():.4f}")

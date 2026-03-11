@@ -177,14 +177,14 @@ class Displayer:
 
         pos0 = self._state_for_display(rollout[0])[:, :2]
         pos0 = torch.tensor(pos0)
-        img0 = gaussian_splat_data(pos0)
+        img0 = gaussian_splat_data(pos0, config=self.trainer.config)
         im = ax.imshow(img0, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=1.)
 
         def update(frame):
             ro = rollout[frame][:,:2]
             ro = self._state_for_display(ro)
             ro = torch.tensor(ro)
-            particle_grid = gaussian_splat_data(ro)
+            particle_grid = gaussian_splat_data(ro, config=self.trainer.config)
             im.set_data(particle_grid)
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return im,
@@ -210,7 +210,7 @@ class Displayer:
             ro = rollout[frame][:,:2]
             ro = self._state_for_display(ro)
             ro = torch.tensor(ro)
-            particle_grid = gaussian_splat_data(ro)
+            particle_grid = gaussian_splat_data(ro, config=self.trainer.config)
 
             difference_grid = (img_grid - particle_grid)**2
             im.set_data(difference_grid)
