@@ -13,9 +13,9 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 1
+    hidden_dim : int = 0
     message_latent_dim : int = 8
-    zero_initialization : bool = False
+    zero_initialization : bool = True
 
 
 @dataclass

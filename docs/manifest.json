@@ -1,11 +1,27 @@
 {
-  "generated_at": "2026-03-09T10:29:10+00:00",
+  "generated_at": "2026-03-10T13:24:31+00:00",
   "runs": [
+    {
+      "id": "no_potential2",
+      "title": "no_potential2",
+      "path": "runs/no_potential2/display.html",
+      "updated_at": "2026-03-10T13:24:31+00:00",
+      "description": "",
+      "tags": []
+    },
+    {
+      "id": "no_potential",
+      "title": "no_potential",
+      "path": "runs/no_potential/display.html",
+      "updated_at": "2026-03-10T13:03:36+00:00",
+      "description": "",
+      "tags": []
+    },
     {
       "id": "hidden_channel_highlr",
       "title": "hidden_channel_highlr",
       "path": "runs/hidden_channel_highlr/display.html",
-      "updated_at": "2026-03-09T10:29:10+00:00",
+      "updated_at": "2026-03-09T11:16:54+00:00",
       "description": "",
       "tags": []
     },

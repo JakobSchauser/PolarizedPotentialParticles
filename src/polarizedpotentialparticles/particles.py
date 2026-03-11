@@ -42,7 +42,7 @@ def uniform_circular_distribution_deterministic(num_particles, device=None):
 
 
 
-class Particle(torch.nn.Module):
+class ParticleOld(torch.nn.Module):
     def __init__(self, config : Config):
         super().__init__()
         self.config = config
@@ -199,10 +199,6 @@ class HamiltonianParticle(torch.nn.Module):
                 self.message_to_output_layer.bias.zero_()
 
     def update(self, output, x):
-        # assert self.x is not None
-        # output: [num_nodes, out_dim]
-        # [H]
-
 
         need_graph = self.training and torch.is_grad_enabled()
         dHdx = torch.autograd.grad(
@@ -211,10 +207,7 @@ class HamiltonianParticle(torch.nn.Module):
             create_graph=need_graph,
             retain_graph=need_graph
         )[0]
-        # clip the update to prevent exploding updates
-        # move_update = torch.clamp(move_update, -0.2, 0.2)
-
-        # update the state by moving in the direction of the negative gradient (gradient descent)
+        
         newstate = x - dHdx * 0.01
 
         x = newstate
@@ -267,6 +260,87 @@ class HamiltonianParticle(torch.nn.Module):
 
         return x
 
+class Particle(torch.nn.Module):
+    def __init__(self, config : Config):
+        super().__init__()
+        self.config = config
+        self.device = torch.device(config.device)
+
+        
+        self.message_conv : torch.nn.Module | None = None
+        self.own_state_nn : torch.nn.Module | None = None
+        self.message_to_output_layer : torch.nn.Module | None = None
+
+        self.setup()
+
+    def setup(self):
+        self.initialize_architecture()
+
+    def initialize_architecture(self):
+        # Message NN
+        self.message_conv = HNNConv(self.config)
+        self.message_to_output_layer = torch.nn.Linear(
+            self.config.particle_config.message_latent_dim,
+            self.config.N_spatial_dim + self.config.particle_config.hidden_dim,
+        )
+        if self.config.particle_config.zero_initialization:
+            with torch.no_grad():
+                self.message_to_output_layer.weight.zero_()
+                self.message_to_output_layer.bias.zero_()
+
+    def update(self, output, x):
+        
+        newstate = x - output * 0.01
+
+        x = newstate
+
+        x.requires_grad_()  # we need to retain gradients for the updated state to compute the Hamiltonian updates in the next step
+
+        return x
+    
+    def get_initial_state(self):
+        # make a regular grid of particles as initial state
+        batch_size = self.config.simulation_config.batch_size
+        num_nodes = batch_size * self.config.N_particles
+
+        base_pos = uniform_circular_distribution_deterministic(self.config.N_particles, device=self.device)
+        pos = base_pos.repeat(batch_size, 1)  # shape [batch_size * N_particles, 2]
+
+        x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device) - 1.) * 0.001
+        x[:, :self.config.N_spatial_dim] = pos
+
+        x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
+        batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
+        return x, batch
+    
+
+    def forward(self, x, batch, steps, return_history: bool = False):
+        assert self.message_conv is not None 
+        assert self.message_to_output_layer is not None
+        # x: [B*N, state_channels]
+        # batch: [B*N]
+
+        history = [] if return_history else None
+
+        for _ in range(steps):
+            edge_index = radius_graph(
+                x[:, : self.config.N_spatial_dim],
+                r=self.config.neighbor_radius,
+                loop=False,
+                batch=batch,
+            )
+
+            output = self.message_conv(x, edge_index, batch=batch)  # [B*N, out_channels]
+            # output = self.message_to_output_layer(output)
+            x = self.update(output, x)
+
+            if return_history:
+                history.append(x)
+
+        if return_history:
+            return x, history
+
+        return x
 
 
 

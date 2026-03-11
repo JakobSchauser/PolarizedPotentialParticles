@@ -82,11 +82,11 @@ class Trainer:
     def __init__(self, config : Config):
         self.config = config
         self.device = torch.device(config.device)
-        # self.particle_system = Particle(config)
-        self.particle_system = HamiltonianParticle(config).to(self.device)
+        self.particle_system = Particle(config).to(self.device)
+        # self.particle_system = HamiltonianParticle(config).to(self.device)
         # self.particle_system = PolarizedHamiltonianParticle(config).to(self.device)
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0005)
+        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0001)
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)s
