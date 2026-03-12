@@ -6,7 +6,7 @@ from torch_geometric.nn import radius_graph
 import json
 from dataclasses import asdict
 
-
+import numpy as np
 import torch
 
 
@@ -85,8 +85,8 @@ class Trainer:
     def __init__(self, config : Config):
         self.config = config
         self.device = torch.device(config.device)
-        self.particle_system = Particle(config).to(self.device)
-        # self.particle_system = HamiltonianParticle(config).to(self.device)
+        # self.particle_system = Particle(config).to(self.device)
+        self.particle_system = HamiltonianParticle(config).to(self.device)
         # self.particle_system = PolarizedHamiltonianParticle(config).to(self.device)
 
         self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0001)
@@ -174,7 +174,7 @@ class Trainer:
             states = torch.stack([x, *step_history], dim=0)
             spatial = states[:, :, :self.config.N_spatial_dim]
             diff_move = spatial[1:] - spatial[:-1]
-            step_loss_t = 0.05 * torch.mean(diff_move**2)
+            step_loss_t = 1. * torch.mean(diff_move**2)
 
 
         total_loss = img_loss_t + step_loss_t
@@ -238,6 +238,30 @@ class Trainer:
             x.requires_grad_(True)        # allow state grads for Hamiltonian step
             out = self.particle_system(x, batch, steps=1)
             states.append(out[mask0].detach().cpu().numpy())
+            x = out.detach()              # break the graph so it doesn’t affect training
+
+        if was_training:
+            self.particle_system.train()
+
+        losses = compute_losses(out, self.config, batch)
+        losses = [l.item() for l in losses]
+
+        return states, losses
+    
+
+    def rollout_batched(self, steps) -> tuple[list, list]:
+        was_training = self.particle_system.training
+        self.particle_system.eval()
+
+        x, batch = self.get_initial_state()
+        states = [x.detach().cpu().numpy()]
+
+        for _ in range(steps):
+            x.requires_grad_(True)        # allow state grads for Hamiltonian step
+            out = self.particle_system(x, batch, steps=1)
+
+            aout = out.detach().cpu().numpy()
+            states.append(aout)
             x = out.detach()              # break the graph so it doesn’t affect training
 
         if was_training:

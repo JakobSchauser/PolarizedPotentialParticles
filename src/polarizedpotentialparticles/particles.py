@@ -17,9 +17,10 @@ def uniform_circular_distribution(num_particles, device=None):
     return torch.stack([x, y], dim=1)
 
 
-def uniform_circular_distribution_deterministic(num_particles, device=None):
-    # radius=0.6
-    radius=0.4
+def uniform_circular_distribution_deterministic(num_particles, noise, device=None):
+    radius=0.6
+    # radius=0.4
+    # radius=1.
 
     i = torch.arange(num_particles, device=device, dtype=torch.float32)
 
@@ -32,13 +33,20 @@ def uniform_circular_distribution_deterministic(num_particles, device=None):
     r = radius * torch.sqrt((i + 0.5) / num_particles)
 
     x = r * torch.cos(theta)
-    y = r * torch.sin(theta)
-
+    y = r * torch.sin(theta)    
+    
     # add a small amount of noise to break perfect symmetry
-    x += 0.01 * torch.randn_like(x)
-    y += 0.01 * torch.randn_like(y)
+    x += noise * torch.randn_like(x)
+    y += noise * torch.randn_like(y)
 
     return torch.stack((x, y), dim=1)
+
+def uniform_circular_distribution_batch(num_particles, batch_size, noise, device=None):
+    base_pos = uniform_circular_distribution_deterministic(num_particles, noise=0.00, device=device)
+    pos = base_pos.repeat(batch_size, 1)  # shape [batch_size * num_particles, 2]
+    pos += noise * torch.randn_like(pos)  # add a small amount of noise to break perfect symmetry
+
+    return pos
 
 
 
@@ -221,11 +229,10 @@ class HamiltonianParticle(torch.nn.Module):
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
 
-        base_pos = uniform_circular_distribution_deterministic(self.config.N_particles, device=self.device)
-        pos = base_pos.repeat(batch_size, 1)  # shape [batch_size * N_particles, 2]
+        base_pos = uniform_circular_distribution_batch(self.config.N_particles, batch_size, noise=0.01, device=self.device)
 
         x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device) - 1.) * 0.001
-        x[:, :self.config.N_spatial_dim] = pos
+        x[:, :self.config.N_spatial_dim] = base_pos
 
         x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
         batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
@@ -303,11 +310,10 @@ class Particle(torch.nn.Module):
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
 
-        base_pos = uniform_circular_distribution_deterministic(self.config.N_particles, device=self.device)
-        pos = base_pos.repeat(batch_size, 1)  # shape [batch_size * N_particles, 2]
+        base_pos = uniform_circular_distribution_batch(self.config.N_particles, batch_size, noise=0.01, device=self.device)
 
         x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device) - 1.) * 0.001
-        x[:, :self.config.N_spatial_dim] = pos
+        x[:, :self.config.N_spatial_dim] = base_pos
 
         x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
         batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)

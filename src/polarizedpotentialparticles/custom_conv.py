@@ -130,7 +130,7 @@ class HNNConv(MessagePassing):
 
         self.config = config
 
-        out_channels = 2
+        out_channels = 1
 
 
         arbitrary_size = 8

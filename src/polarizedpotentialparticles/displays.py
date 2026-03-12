@@ -15,10 +15,7 @@ class Displayer:
         self.px_size = 500
 
     def _state_for_display(self, state):
-        # state may be [N, C] or [B, N, C]; display first batch if present
-        if hasattr(state, "shape") and len(state.shape) == 3:
-            return state[-1]
-        return state
+        return state.reshape(self.trainer.config.simulation_config.batch_size, self.trainer.config.N_particles, -1)[-1]
 
     def loss(self):
         losses = [h["loss"] for h in self.trainer.history]
@@ -115,7 +112,7 @@ class Displayer:
 
             scat.set_offsets(pos)  # Update the scatter plot with new positions
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
-            return scat, 
+            return (scat,)
     
         anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
 
@@ -296,6 +293,39 @@ class Displayer:
 
         plt.close(fig)
         return pn.panel(fig, width=self.px_size, height=self.px_size)
+
+    def show_9_runs_from_batch(self, rollout : list):
+        # Create an animation of the particle positions over time
+        fig, axs = plt.subplots(2,3, figsize=(6, 4), sharex=True, sharey=True, constrained_layout=True)
+        axs = axs.flatten()
+        scats = [ax.scatter([], [], s=30) for ax in axs]  # Initialize an empty scatter plot for each subplot
+
+        x_lim = (-1.1, 1.1)
+        y_lim = (-1.1, 1.1)
+        for ax in axs:
+            ax.set_xlim(x_lim)
+            ax.set_ylim(y_lim)
+        
+
+        def update(frame):
+
+            for i in range(len(axs)):
+                rol = rollout[frame].reshape(self.trainer.config.simulation_config.batch_size, self.trainer.config.N_particles, -1)
+                pos = rol[i][:, :2]  # Get the positions for the current frame
+                scats[i].set_offsets(pos)  # Update the scatter plot with new positions
+                axs[i].set_title(f"Frame {frame+1}/{len(rollout)}")
+            
+            return scats
+    
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+
+        # show as gif in notebook
+        anim.save("animation_batch.gif", writer="pillow")
+        plt.close(fig)
+
+
+        return pn.panel("animation_batch.gif", width=self.px_size, height=self.px_size)
+    
     
 
     def dashboard(self, rollout, losses):
@@ -303,7 +333,8 @@ class Displayer:
 
         to_display.append(self.loss())
         to_display.append(self.loss_types(normalize = False))
-        to_display.append(self.final_state(rollout, losses))
+        # to_display.append(self.final_state(rollout, losses))
+        to_display.append(self.show_9_runs_from_batch(rollout))
         # to_display.append(self.rollout_as_static(rollout))
         has_hidden_dim = self.trainer.config.particle_config.hidden_dim > 0
         if has_hidden_dim:
@@ -343,3 +374,4 @@ class Displayer:
             align_content="flex-start",
             gap="0px",
         )
+

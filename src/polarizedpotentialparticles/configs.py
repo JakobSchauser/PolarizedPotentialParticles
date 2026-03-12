@@ -13,7 +13,7 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 0
+    hidden_dim : int = 2
     message_latent_dim : int = 8
     zero_initialization : bool = True
     is_potential : bool = False
@@ -36,14 +36,15 @@ class Config:
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    N_particles : int = 55
+    # N_particles : int = 55
+    N_particles : int = 100
 
     neighbor_radius : float = 0.1
 
     device : Literal["cpu", "cuda"] = "cuda"
 
     learned_sigma : bool = False
-    sigma : float = 0.08
+    sigma : float = 0.1
 
     @property
     def message_channels(self) -> int:

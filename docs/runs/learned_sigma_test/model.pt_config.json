@@ -2,7 +2,8 @@
     "particle_config": {
         "hidden_dim": 0,
         "message_latent_dim": 8,
-        "zero_initialization": true
+        "zero_initialization": true,
+        "is_potential": false
     },
     "simulation_config": {
         "dt": 0.1,
@@ -19,5 +20,5 @@
     "neighbor_radius": 0.1,
     "device": "cuda",
     "learned_sigma": false,
-    "sigma": 0.08
+    "sigma": 0.1
 }
