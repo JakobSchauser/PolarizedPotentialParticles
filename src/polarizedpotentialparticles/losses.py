@@ -89,9 +89,10 @@ def gaussian_splat_from_image(img_path, device=None):
 
 
     # gaussian splatting of the image
-    img_grid = gaussian_splat(img_pos, sigma = 0.1, grid_size=grid_size, normalize=False) / 16.
+    img_grid = gaussian_splat(img_pos, sigma = 0.1, grid_size=grid_size, normalize=True)
 
 
+    
     return img_grid
 
 

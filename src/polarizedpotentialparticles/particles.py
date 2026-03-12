@@ -353,6 +353,118 @@ class Particle(torch.nn.Module):
 
 
 
+class PolarizedHamiltonianParticle(torch.nn.Module):
+    def __init__(self, config : Config):
+        super().__init__()
+        self.config = config
+        self.device = torch.device(config.device)
+
+        
+        self.message_conv : torch.nn.Module | None = None
+        self.own_state_nn : torch.nn.Module | None = None
+        self.message_to_output_layer : torch.nn.Module | None = None
+
+        self.setup()
+
+    def setup(self):
+        self.initialize_architecture()
+
+    def initialize_architecture(self):
+        # Message NN
+        self.message_conv = HNNConv(self.config)
+        self.message_to_output_layer = torch.nn.Linear(
+            self.config.particle_config.message_latent_dim,
+            self.config.out_dim,
+        )
+
+        if self.config.particle_config.zero_initialization:
+            with torch.no_grad():
+                self.message_to_output_layer.weight.zero_()
+                self.message_to_output_layer.bias.zero_()
+
+    def update(self, output, x):
+
+        need_graph = self.training and torch.is_grad_enabled()
+
+
+        potentialoutput = output[:, 0]  # [num_nodes]
+        hidden_output = output[:, 1:]  # [num_nodes, hidden_dim]
+
+        dHdx = torch.autograd.grad(
+            potentialoutput.sum(),
+            x,
+            create_graph=need_graph,
+            retain_graph=need_graph
+        )[0]
+
+        # print("dHdx:", dHdx.shape)
+        # print("hidden_output:", hidden_output.shape)
+        # clip the updates to prevent exploding gradients
+        dHdx = torch.clamp(dHdx, -30., 30.)
+        hidden_output = torch.clamp(hidden_output, -30., 30.)
+
+        x_new = x.clone()  # avoid in-place operations on x which can cause autograd issues
+
+        x_new_potential = x_new[:, :self.config.N_spatial_dim] - dHdx[:, :self.config.N_spatial_dim] * 0.01
+
+
+        
+
+        hidden_start = self.config.N_spatial_dim
+        x_new_hidden = x_new[:, hidden_start:] + hidden_output * 0.01
+
+        if not torch.isfinite(x_new_potential).all() or not torch.isfinite(x_new_hidden).all():
+            raise RuntimeError("NaN before cat in PolarizedHamiltonianParticle.update")
+
+        x = torch.cat([x_new_potential, x_new_hidden], dim=1)
+        x.requires_grad_()
+
+
+        return x
+    
+    def get_initial_state(self):
+        # make a regular grid of particles as initial state
+        batch_size = self.config.simulation_config.batch_size
+        num_nodes = batch_size * self.config.N_particles
+
+        base_pos = uniform_circular_distribution_batch(self.config.N_particles, batch_size, noise=0.01, device=self.device)
+
+        x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device) - 1.) * 0.001
+        x[:, :self.config.N_spatial_dim] = base_pos
+
+        x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
+        batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
+        return x, batch
+    
+
+    def forward(self, x, batch, steps, return_history: bool = False):
+        assert self.message_conv is not None 
+        assert self.message_to_output_layer is not None
+        # x: [B*N, state_channels]
+        # batch: [B*N]
+
+        history = [] if return_history else None
+
+        for _ in range(steps):
+            edge_index = radius_graph(
+                x[:, : self.config.N_spatial_dim],
+                r=self.config.neighbor_radius,
+                loop=False,
+                batch=batch,
+            )
+
+            output = self.message_conv(x, edge_index, batch=batch)  # [B*N, out_channels]
+
+            x = self.update(output, x)
+
+            if return_history:
+                history.append(x)
+
+        if return_history:
+            return x, history
+
+        return x
+
 # class PolarizedHamiltonianParticle(torch.nn.Module):
 #     def __init__(self, config : Config):
 #         super().__init__()

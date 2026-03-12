@@ -44,7 +44,7 @@ class Config:
     device : Literal["cpu", "cuda"] = "cuda"
 
     learned_sigma : bool = False
-    sigma : float = 0.1
+    sigma : float = 0.08
 
     @property
     def message_channels(self) -> int:
