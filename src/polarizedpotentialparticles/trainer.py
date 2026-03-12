@@ -89,7 +89,7 @@ class Trainer:
         self.particle_system = HamiltonianParticle(config).to(self.device)
         # self.particle_system = PolarizedHamiltonianParticle(config).to(self.device)
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0001)
+        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.01)
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)s
