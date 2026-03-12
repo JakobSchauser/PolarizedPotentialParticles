@@ -13,7 +13,7 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 2
+    hidden_dim : int = 4
     message_latent_dim : int = 8
     zero_initialization : bool = True
     is_potential : bool = False
@@ -37,7 +37,7 @@ class Config:
     N_spatial_dim : int = 2
     N_polarizations : int = 1
     # N_particles : int = 55
-    N_particles : int = 100
+    N_particles : int = 200
 
     neighbor_radius : float = 0.1
 

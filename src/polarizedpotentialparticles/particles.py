@@ -215,6 +215,9 @@ class HamiltonianParticle(torch.nn.Module):
             create_graph=need_graph,
             retain_graph=need_graph
         )[0]
+
+        # clip the updates to prevent exploding gradients
+        dHdx = torch.clamp(dHdx, -100., 100.)
         
         newstate = x - dHdx * 0.01
 
