@@ -1,4 +1,4 @@
-from polarizedpotentialparticles.particles import Particle, HamiltonianParticle, PolarizedHamiltonianParticle
+from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle, ParticleType
 from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.losses import compute_loss, compute_losses
 import torch.nn.functional as F
@@ -8,6 +8,14 @@ from dataclasses import asdict
 
 import numpy as np
 import torch
+
+
+PARTICLE_TYPES = {
+    ParticleOld.particle_type_name: ParticleOld,
+    Particle.particle_type_name: Particle,
+    HamiltonianParticle.particle_type_name: HamiltonianParticle,
+    PolarizedHamiltonianParticle.particle_type_name: PolarizedHamiltonianParticle,
+}
 
 
 class StatePool:
@@ -85,11 +93,10 @@ class Trainer:
     def __init__(self, config : Config):
         self.config = config
         self.device = torch.device(config.device)
-        # self.particle_system = Particle(config).to(self.device)
-        # self.particle_system = HamiltonianParticle(config).to(self.device)
-        self.particle_system = PolarizedHamiltonianParticle(config).to(self.device)
+        self.particle_system = self._build_particle_system(config).to(self.device)
+        self.config.particle_type_name = self.particle_system.particle_type_name
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.001)
+        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0001)
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)s
@@ -104,6 +111,25 @@ class Trainer:
                 seed_fn=self.get_initial_state,
                 reseed_count=6,
             )
+
+    @staticmethod
+    def _build_particle_system(config: Config):
+        raw_particle_type_name = getattr(config, "particle_type_name", ParticleType.HAMILTONIAN)
+        try:
+            particle_type_name = ParticleType(raw_particle_type_name)
+        except ValueError as exc:
+            valid_types = ", ".join(sorted(name.value for name in PARTICLE_TYPES))
+            raise ValueError(
+                f"Unknown particle_type_name '{raw_particle_type_name}'. Expected one of: {valid_types}."
+            ) from exc
+
+        particle_cls = PARTICLE_TYPES.get(particle_type_name)
+        if particle_cls is None:
+            valid_types = ", ".join(sorted(name.value for name in PARTICLE_TYPES))
+            raise ValueError(
+                f"Unknown particle_type_name '{particle_type_name}'. Expected one of: {valid_types}."
+            )
+        return particle_cls(config)
 
     def get_nbs(self, x, batch):
         # get all particles within a certain radius as neighbors per graph in the batch

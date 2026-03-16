@@ -1,9 +1,8 @@
 {
     "particle_config": {
-        "hidden_dim": 2,
+        "hidden_dim": 0,
         "message_latent_dim": 8,
-        "zero_initialization": false,
-        "is_potential": false
+        "zero_initialization": true
     },
     "simulation_config": {
         "dt": 0.1,
@@ -14,6 +13,7 @@
         "target": "circle",
         "use_state_pool": true
     },
+    "particle_type_name": "hamiltonian",
     "N_spatial_dim": 2,
     "N_polarizations": 1,
     "N_particles": 35,

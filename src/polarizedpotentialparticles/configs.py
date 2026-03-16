@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable, Literal
+from polarizedpotentialparticles.particles import ParticleType
 
 
 
@@ -13,10 +14,10 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 2
+    hidden_dim : int = 0
     message_latent_dim : int = 8
-    zero_initialization : bool = False
-    is_potential : bool = False
+    zero_initialization : bool = True
+    # is_potential : bool = False
 
 
 
@@ -33,6 +34,8 @@ class Config:
     particle_config : ParticleConfig
     simulation_config : SimulationConfig
     loss_config : LossConfig
+
+    particle_type_name: ParticleType = ParticleType.HAMILTONIAN
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
