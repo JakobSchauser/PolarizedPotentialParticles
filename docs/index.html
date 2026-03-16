@@ -181,9 +181,65 @@
 			color: #334e68;
 		}
 
+		.metric-label {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			min-width: 0;
+		}
+
 		.metrics-summary strong {
 			font-weight: 600;
 			color: #243b53;
+		}
+
+		.metric-help {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 16px;
+			height: 16px;
+			border-radius: 999px;
+			border: 1px solid #9fb3c8;
+			background: #fff;
+			color: var(--muted);
+			font-size: 0.68rem;
+			font-weight: 700;
+			cursor: help;
+			position: relative;
+			flex: 0 0 auto;
+		}
+
+		.metric-help::after {
+			content: attr(data-tooltip);
+			position: absolute;
+			left: calc(100% + 8px);
+			top: 50%;
+			transform: translateY(-50%);
+			z-index: 2;
+			min-width: 210px;
+			max-width: 260px;
+			padding: 8px 10px;
+			border-radius: 8px;
+			background: #102a43;
+			color: #f0f4f8;
+			font-size: 0.74rem;
+			line-height: 1.35;
+			white-space: normal;
+			box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+			opacity: 0;
+			pointer-events: none;
+			transition: opacity 120ms ease;
+		}
+
+		.metric-help:hover::after,
+		.metric-help:focus-visible::after {
+			opacity: 1;
+		}
+
+		.metric-value {
+			text-align: right;
+			font-variant-numeric: tabular-nums;
 		}
 
 		.metrics-empty {
@@ -302,6 +358,12 @@
 		const runMetricsContent = document.getElementById("run-metrics-content");
 		const frame = document.getElementById("frame");
 		const statusText = document.getElementById("status");
+		const metricHelpText = {
+			correctness: "Image MSE between the particle-rendered state and the target over rollout steps. Lower is better. The displayed value is the final curve value.",
+			stability: "Average per-step movement magnitude ||x_t - x_{t-1}||. Lower is more stable. The displayed value is the mean over the rollout.",
+			robustness: "Normalized drift between the baseline rollout and a noisy rollout. Lower is better. The displayed value is the final normalized drift.",
+			scalability: "Chamfer distance between the baseline final state and a larger scaled/downsampled rollout. Lower is better. The displayed value is the mean over repeats."
+		};
 
 		let allRuns = [];
 		let filteredRuns = [];
@@ -334,6 +396,55 @@
 			return value.toFixed(6);
 		}
 
+		function escapeHtml(value) {
+			return String(value)
+				.replace(/&/g, "&amp;")
+				.replace(/</g, "&lt;")
+				.replace(/>/g, "&gt;")
+				.replace(/\"/g, "&quot;")
+				.replace(/'/g, "&#39;");
+		}
+
+		function resolveRelativePath(path, baseDir) {
+			const baseParts = baseDir.split("/").filter(Boolean);
+			const pathParts = path.split("/").filter(Boolean);
+			for (const segment of pathParts) {
+				if (segment === ".") {
+					continue;
+				}
+				if (segment === "..") {
+					if (baseParts.length > 0) {
+						baseParts.pop();
+					}
+					continue;
+				}
+				baseParts.push(segment);
+			}
+			return baseParts.join("/");
+		}
+
+		function getMetricTooltip(metricKey, metric) {
+			const details = [metricHelpText[metricKey] || ""];
+			if (metricKey === "robustness" && typeof metric.noise_factor === "number") {
+				details.push(`noise_factor=${metric.noise_factor}`);
+			}
+			if (metricKey === "scalability") {
+				if (typeof metric.scale_factor === "number") {
+					details.push(`scale_factor=${metric.scale_factor}`);
+				}
+				if (typeof metric.downsample_mode === "string" && metric.downsample_mode) {
+					details.push(`downsample_mode=${metric.downsample_mode}`);
+				}
+				if (typeof metric.std === "number" && Number.isFinite(metric.std)) {
+					details.push(`std=${formatMetricValue(metric.std)}`);
+				}
+			}
+			if (metricKey === "stability" && typeof metric.late_value === "number") {
+				details.push(`late_value=${formatMetricValue(metric.late_value)}`);
+			}
+			return details.filter(Boolean).join(" ");
+		}
+
 		function resolveAssetPath(path, runDir) {
 			if (typeof path !== "string") {
 				return null;
@@ -348,16 +459,26 @@
 				return clean;
 			}
 
-			if (clean.startsWith("runs/") || clean.startsWith("./") || clean.startsWith("../") || clean.startsWith("/")) {
-				return clean;
+			const normalized = clean.replace(/\\/g, "/");
+			const docsRunsIdx = normalized.indexOf("docs/runs/");
+			if (docsRunsIdx >= 0) {
+				return normalized.slice(docsRunsIdx + 5);
 			}
 
-			const runsIdx = clean.indexOf("runs/");
+			const runsIdx = normalized.indexOf("runs/");
 			if (runsIdx >= 0) {
-				return clean.slice(runsIdx);
+				return normalized.slice(runsIdx);
 			}
 
-			return `${runDir}/${clean}`;
+			if (normalized.startsWith("/")) {
+				return normalized.replace(/^\/+/, "");
+			}
+
+			if (normalized.startsWith("./") || normalized.startsWith("../")) {
+				return resolveRelativePath(normalized, runDir);
+			}
+
+			return `${runDir}/${normalized}`;
 		}
 
 		function renderMetricsJson(metricsData, sourcePath, runDir) {
@@ -369,12 +490,14 @@
 
 			metricOrder.forEach((metricKey) => {
 				const metric = metricsData && typeof metricsData === "object" ? metricsData[metricKey] : null;
+				const tooltip = escapeHtml(getMetricTooltip(metricKey, metric || {}));
+				const labelHtml = `<span class="metric-label"><strong>${metricKey}</strong><span class="metric-help" tabindex="0" data-tooltip="${tooltip}" aria-label="${tooltip}">?</span></span>`;
 				if (!metric || typeof metric !== "object") {
-					summaryRows.push(`<strong>${metricKey}</strong><span>n/a</span>`);
+					summaryRows.push(`${labelHtml}<span class="metric-value">n/a</span>`);
 					return;
 				}
 
-				summaryRows.push(`<strong>${metricKey}</strong><span>${formatMetricValue(metric.value)}</span>`);
+				summaryRows.push(`${labelHtml}<span class="metric-value">${formatMetricValue(metric.value)}</span>`);
 
 				const imagePath = resolveAssetPath(metric.plot, runDir);
 				if (imagePath) {
