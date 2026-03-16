@@ -125,12 +125,11 @@ class CustomNNConv(MessagePassing):
 
 
 class HNNConv(MessagePassing):
-    def __init__(self, config : Config):
+    def __init__(self, out_channels: int, config : Config):
         super().__init__()
 
         self.config = config
 
-        out_channels = 5
 
 
         arbitrary_size = 8

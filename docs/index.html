@@ -158,6 +158,68 @@
 			color: #334e68;
 		}
 
+		.metrics-box {
+			margin-top: 10px;
+			padding: 10px;
+			border: 1px solid var(--line);
+			border-radius: 10px;
+			background: #fbfcfd;
+		}
+
+		.metrics-title {
+			margin: 0 0 8px;
+			font-size: 0.84rem;
+			color: var(--muted);
+			font-weight: 600;
+		}
+
+		.metrics-summary {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			gap: 4px 8px;
+			font-size: 0.82rem;
+			color: #334e68;
+		}
+
+		.metrics-summary strong {
+			font-weight: 600;
+			color: #243b53;
+		}
+
+		.metrics-empty {
+			margin: 0;
+			font-size: 0.82rem;
+			color: var(--muted);
+		}
+
+		.metrics-images {
+			margin-top: 8px;
+			display: grid;
+			gap: 8px;
+		}
+
+		.metrics-image {
+			margin: 0;
+			padding: 6px;
+			border: 1px solid var(--line);
+			border-radius: 8px;
+			background: #fff;
+		}
+
+		.metrics-image figcaption {
+			font-size: 0.75rem;
+			color: var(--muted);
+			margin-bottom: 6px;
+		}
+
+		.metrics-image img {
+			display: block;
+			width: 100%;
+			height: auto;
+			border-radius: 6px;
+			border: 1px solid #ebeff4;
+		}
+
 		.viewer {
 			display: flex;
 			flex-direction: column;
@@ -214,6 +276,10 @@
 					<p id="run-config-title" class="config-title">Config JSON</p>
 					<pre id="run-config-content" class="config-content">Waiting for selection...</pre>
 				</div>
+				<div id="run-metrics" class="metrics-box">
+					<p id="run-metrics-title" class="metrics-title">Quality Metrics</p>
+					<div id="run-metrics-content" class="metrics-empty">Waiting for selection...</div>
+				</div>
 			</aside>
 
 			<section class="viewer">
@@ -232,12 +298,15 @@
 		const meta = document.getElementById("run-meta");
 		const runConfigTitle = document.getElementById("run-config-title");
 		const runConfigContent = document.getElementById("run-config-content");
+		const runMetricsTitle = document.getElementById("run-metrics-title");
+		const runMetricsContent = document.getElementById("run-metrics-content");
 		const frame = document.getElementById("frame");
 		const statusText = document.getElementById("status");
 
 		let allRuns = [];
 		let filteredRuns = [];
 		let latestConfigRequest = 0;
+		let latestMetricsRequest = 0;
 
 		function setConfigStatus(message, title = "Config JSON") {
 			runConfigTitle.textContent = title;
@@ -247,6 +316,81 @@
 		function renderConfigJson(jsonData, sourcePath) {
 			runConfigTitle.textContent = `Config JSON (${sourcePath})`;
 			runConfigContent.textContent = JSON.stringify(jsonData, null, 2);
+		}
+
+		function setMetricsStatus(message, title = "Quality Metrics") {
+			runMetricsTitle.textContent = title;
+			runMetricsContent.className = "metrics-empty";
+			runMetricsContent.textContent = message;
+		}
+
+		function formatMetricValue(value) {
+			if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) {
+				return "n/a";
+			}
+			if (Math.abs(value) >= 1000) {
+				return value.toExponential(2);
+			}
+			return value.toFixed(6);
+		}
+
+		function resolveAssetPath(path, runDir) {
+			if (typeof path !== "string") {
+				return null;
+			}
+
+			const clean = path.trim();
+			if (!clean) {
+				return null;
+			}
+
+			if (/^(https?:|data:)/i.test(clean)) {
+				return clean;
+			}
+
+			if (clean.startsWith("runs/") || clean.startsWith("./") || clean.startsWith("../") || clean.startsWith("/")) {
+				return clean;
+			}
+
+			const runsIdx = clean.indexOf("runs/");
+			if (runsIdx >= 0) {
+				return clean.slice(runsIdx);
+			}
+
+			return `${runDir}/${clean}`;
+		}
+
+		function renderMetricsJson(metricsData, sourcePath, runDir) {
+			runMetricsTitle.textContent = `Quality Metrics (${sourcePath})`;
+
+			const metricOrder = ["correctness", "stability", "robustness", "scalability"];
+			const summaryRows = [];
+			const imageRows = [];
+
+			metricOrder.forEach((metricKey) => {
+				const metric = metricsData && typeof metricsData === "object" ? metricsData[metricKey] : null;
+				if (!metric || typeof metric !== "object") {
+					summaryRows.push(`<strong>${metricKey}</strong><span>n/a</span>`);
+					return;
+				}
+
+				summaryRows.push(`<strong>${metricKey}</strong><span>${formatMetricValue(metric.value)}</span>`);
+
+				const imagePath = resolveAssetPath(metric.plot, runDir);
+				if (imagePath) {
+					imageRows.push(
+						`<figure class="metrics-image"><figcaption>${metricKey} plot</figcaption><img src="${imagePath}" alt="${metricKey} metric plot" loading="lazy"></figure>`
+					);
+				}
+			});
+
+			const summaryHtml = `<div class="metrics-summary">${summaryRows.join("")}</div>`;
+			const imagesHtml = imageRows.length > 0
+				? `<div class="metrics-images">${imageRows.join("")}</div>`
+				: "";
+
+			runMetricsContent.className = "";
+			runMetricsContent.innerHTML = `${summaryHtml}${imagesHtml}`;
 		}
 
 		function getRunDirFromPath(runPath) {
@@ -292,6 +436,42 @@
 			}
 		}
 
+		async function loadRunMetrics(run, requestId) {
+			if (!run || !run.path) {
+				if (requestId === latestMetricsRequest) {
+					setMetricsStatus("No metrics available.");
+				}
+				return;
+			}
+
+			const runDir = getRunDirFromPath(run.path);
+			const candidates = [];
+			if (typeof run.metrics_path === "string" && run.metrics_path) {
+				candidates.push(run.metrics_path);
+			}
+			candidates.push(`${runDir}/metrics.json`);
+
+			for (const candidate of candidates) {
+				try {
+					const response = await fetch(candidate, { cache: "no-store" });
+					if (!response.ok) {
+						continue;
+					}
+					const jsonData = await response.json();
+					if (requestId === latestMetricsRequest) {
+						renderMetricsJson(jsonData, candidate, runDir);
+					}
+					return;
+				} catch (error) {
+					continue;
+				}
+			}
+
+			if (requestId === latestMetricsRequest) {
+				setMetricsStatus("No metrics available for this run.");
+			}
+		}
+
 		function updateMeta(run) {
 			if (!run) {
 				meta.textContent = "No run selected.";
@@ -316,7 +496,9 @@
 				directLink.href = "#";
 				updateMeta(null);
 				latestConfigRequest += 1;
+				latestMetricsRequest += 1;
 				setConfigStatus("No run selected.");
+				setMetricsStatus("No metrics available.");
 				return;
 			}
 
@@ -325,9 +507,13 @@
 			statusText.textContent = `Viewing ${run.title || run.id}`;
 			updateMeta(run);
 			latestConfigRequest += 1;
+			latestMetricsRequest += 1;
 			const requestId = latestConfigRequest;
+			const metricsRequestId = latestMetricsRequest;
 			setConfigStatus("Loading config JSON...");
+			setMetricsStatus("Loading metrics...");
 			loadRunConfig(run, requestId);
+			loadRunMetrics(run, metricsRequestId);
 
 			if (pushHash) {
 				const encoded = encodeURIComponent(run.id);

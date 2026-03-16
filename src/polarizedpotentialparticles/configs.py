@@ -13,16 +13,16 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 4
+    hidden_dim : int = 2
     message_latent_dim : int = 8
-    zero_initialization : bool = True
+    zero_initialization : bool = False
     is_potential : bool = False
 
 
 
 @dataclass
 class LossConfig:
-    target : Literal["square", "circle", "oval", "donut"] = "square"
+    target : Literal["square", "circle", "oval", "donut", "thiccdonut"] = "square"
 
     use_state_pool : bool = True
 
@@ -36,15 +36,18 @@ class Config:
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    # N_particles : int = 55
-    N_particles : int = 200
+    N_particles : int = 35
+    # N_particles : int = 200
 
-    neighbor_radius : float = 0.1
+    neighbor_radius : float = 0.15*2.
 
     device : Literal["cpu", "cuda"] = "cuda"
 
     learned_sigma : bool = False
-    sigma : float = 0.08
+    sigma : float = (2/2.355) * 0.07
+
+
+    noise_level : float = 1e-7
 
     @property
     def message_channels(self) -> int:

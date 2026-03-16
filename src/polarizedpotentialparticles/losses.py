@@ -57,7 +57,14 @@ def gaussian_splat(pos, sigma, grid_size=64, normalize=True):
     px = pos[:, 0].view(-1, 1, 1)  # [P, 1, 1]
     py = pos[:, 1].view(-1, 1, 1)
     d2 = (xx - px) ** 2 + (yy - py) ** 2  # [P, H, W]
-    grid = torch.exp(-d2 / (2 * sigma ** 2)).sum(dim=0)  # [H, W]
+
+    def gaussian(d2, sigma):
+        return torch.exp(-d2 / (2 * sigma ** 2))
+
+    # def gaussian_normalized(d2, sigma):
+    #     return torch.exp(-d2 / (2 * sigma ** 2))/ (2 * np.pi * sigma ** 2)
+
+    grid = gaussian(d2, sigma).sum(dim=0)  # [H, W] 
 
     if normalize:
         # normalize the grid to [0, 1]
@@ -67,8 +74,8 @@ def gaussian_splat(pos, sigma, grid_size=64, normalize=True):
 
 
 def gaussian_splat_data(pos, config : Config):
-    return gaussian_splat(pos, sigma=config.sigma, grid_size=64, normalize=False)
-
+    gs =  gaussian_splat(pos, sigma=config.sigma, grid_size=64, normalize=False)
+    return gs
 
 def gaussian_splat_from_image(img_path, device=None):
     grid_size = 64
@@ -88,11 +95,8 @@ def gaussian_splat_from_image(img_path, device=None):
     img_pos = img_pos.to(device)
 
 
-    # gaussian splatting of the image
     img_grid = gaussian_splat(img_pos, sigma = 0.1, grid_size=grid_size, normalize=True)
 
-
-    
     return img_grid
 
 

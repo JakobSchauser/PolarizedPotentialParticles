@@ -58,6 +58,10 @@ def _build_manifest_payload(docs_dir: Path) -> dict[str, Any]:
             if isinstance(value, str) and value:
                 record[key] = value
 
+        metrics_path = run_dir / "metrics.json"
+        if metrics_path.is_file():
+            record["metrics_path"] = str(metrics_path.relative_to(docs_dir)).replace("\\", "/")
+
         records.append(record)
 
     records.sort(key=lambda item: item["updated_at"], reverse=True)
