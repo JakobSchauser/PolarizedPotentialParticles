@@ -25,8 +25,8 @@ def uniform_circular_distribution(num_particles, device=None):
 
 def uniform_circular_distribution_deterministic(num_particles, noise, device=None):
     # radius=0.6
-    radius=0.4
-    # radius=0.6
+    # radius=0.9
+    radius=0.8
 
     i = torch.arange(num_particles, device=device, dtype=torch.float32)
 
@@ -427,9 +427,10 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
         dHdx = torch.clamp(dHdx, -30., 30.)
         hidden_output = torch.tanh(hidden_output)
 
+        x_old = x.clone()  # [num_nodes, state_dim]
         x_new = x.clone()  # avoid in-place operations on x which can cause autograd issues
 
-        x_new_potential = x_new[:, :self.config.N_spatial_dim] - dHdx[:, :self.config.N_spatial_dim] * 0.01
+        x_new_potential = x_new[:, :self.config.N_spatial_dim] - dHdx[:, :self.config.N_spatial_dim] * 0.01 + torch.randn_like(dHdx[:, :self.config.N_spatial_dim]) * self.config.noise_level
 
 
         
@@ -443,7 +444,11 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
         if not torch.isfinite(x_new_potential).all() or not torch.isfinite(x_new_hidden).all():
             raise RuntimeError("NaN before cat in PolarizedHamiltonianParticle.update")
 
-        x = torch.cat([x_new_potential, x_new_hidden], dim=1)
+        x_new = torch.cat([x_new_potential, x_new_hidden], dim=1)
+
+        # update 1-p of the nodes randomly
+        x = torch.where(torch.rand_like(x) > 0.02, x_new, x_old)
+
         x.requires_grad_()
 
 
@@ -456,14 +461,23 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
 
         base_pos = uniform_circular_distribution_batch(self.config.N_particles, batch_size, noise=0.01, device=self.device)
 
-        x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device) - 1.) * 0.001
+        # x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device) - 1.) * 0.001
+        x = torch.zeros((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device)
+
         x[:, :self.config.N_spatial_dim] = base_pos
+        # radial initialization of the hidden part
+        x[:, self.config.N_spatial_dim:] = base_pos.clone()  # start with the hidden part the same as the spatial part
         x[:, self.config.N_spatial_dim:] = F.normalize(
-            torch.randn((num_nodes, self.config.particle_config.hidden_dim), device=self.device),
+            x[:, self.config.N_spatial_dim:],
             p=2,
             dim=1,
             eps=1e-8,
         )
+
+        # fill the hidden part with unit vectors pointing to the right
+        # x = torch.zeros((num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim), device=self.device)
+        # x[:, :self.config.N_spatial_dim] = base_pos
+        # x[:, self.config.N_spatial_dim:self.config.N_spatial_dim + self.config.particle_config.hidden_dim] = torch.tensor([1., 0.], device=self.device)
 
         x.requires_grad_()  # we need gradients for the initial positions to compute the Hamiltonian updates
         batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)

@@ -97,7 +97,7 @@ class Trainer:
         self.particle_system = self._build_particle_system(config).to(self.device)
         self.config.particle_type_name = self.particle_system.particle_type_name
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=0.0001)
+        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=config.loss_config.learning_rate)
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)s

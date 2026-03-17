@@ -164,6 +164,63 @@ class Displayer:
 
 
         return pn.panel("animation_hidden.gif", width=self.px_size, height=self.px_size)
+    
+    def rollout_image_polarity(self, rollout : list):
+        fig, ax = plt.subplots(figsize=(6, 6))
+        scat = ax.scatter([], [], s=100, c="tab:blue", alpha=0.8)
+
+        x_lim = (-1.1, 1.1)
+        y_lim = (-1.1, 1.1)
+        ax.set_xlim(x_lim)
+        ax.set_ylim(y_lim)
+
+        emoji_path = (Path(__file__).resolve().parent / "morphologies" / f"{self.trainer.config.loss_config.target}.png")
+
+        img_grid = gaussian_splat_from_image(emoji_path)
+
+        ax.imshow(img_grid, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=0.5)
+
+        first_frame = self._state_for_display(rollout[0])
+        pos0 = first_frame[:, :2]
+        pol_start = self.trainer.config.N_spatial_dim
+        pol_end = pol_start + self.trainer.config.N_spatial_dim
+
+        if first_frame.shape[1] < pol_end:
+            raise ValueError(
+                "rollout_image_polarity requires states with an explicit polarity vector block."
+            )
+
+        polarity0 = first_frame[:, pol_start:pol_end]
+        arrow_scale = 0.08
+
+        quiver = ax.quiver(
+            pos0[:, 0],
+            pos0[:, 1],
+            polarity0[:, 0] * arrow_scale,
+            polarity0[:, 1] * arrow_scale,
+            angles='xy',
+            scale_units='xy',
+            scale=1,
+            color='tab:red',
+            width=0.006,
+        )
+
+        def update(frame):
+            display_state = self._state_for_display(rollout[frame])
+            pos = display_state[:, :2]
+            polarity = display_state[:, pol_start:pol_end]
+
+            scat.set_offsets(pos)
+            quiver.set_offsets(pos)
+            quiver.set_UVC(polarity[:, 0] * arrow_scale, polarity[:, 1] * arrow_scale)
+            ax.set_title(f"Frame {frame+1}/{len(rollout)}")
+            return scat, quiver
+
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim.save("animation_polarity.gif", writer="pillow")
+        plt.close(fig)
+
+        return pn.panel("animation_polarity.gif", width=self.px_size, height=self.px_size)
 
 
 
@@ -338,7 +395,10 @@ class Displayer:
         # to_display.append(self.rollout_as_static(rollout))
         has_hidden_dim = self.trainer.config.particle_config.hidden_dim > 0
         if has_hidden_dim:
-            to_display.append(self.rollout_image_hidden(rollout))
+            if self.trainer.config.particle_config.hidden_dim == 2:
+                to_display.append(self.rollout_image_polarity(rollout))
+            else:
+                to_display.append(self.rollout_image_hidden(rollout))
         else:
             to_display.append(self.rollout_image(rollout))
         to_display.append(self.rollout_image_gauss(rollout))
