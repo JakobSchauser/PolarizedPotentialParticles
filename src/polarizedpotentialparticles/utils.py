@@ -1,8 +1,13 @@
-from polarizedpotentialparticles.configs import Config
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from polarizedpotentialparticles.configs import Config
 
 
 
-def atomize_state(x, config : Config):
+def atomize_state(x, config: Config):
     # x: [num_nodes, state_channels]
 
     pos = x[:, :config.N_spatial_dim]  # [num_nodes, N_spatial_dim]

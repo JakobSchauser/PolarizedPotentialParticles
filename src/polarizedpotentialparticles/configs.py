@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable, Literal
-from polarizedpotentialparticles.particles import ParticleType
+from polarizedpotentialparticles.particle_types import ParticleType
 
 
 

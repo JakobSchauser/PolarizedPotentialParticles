@@ -1,6 +1,15 @@
 {
-  "generated_at": "2026-03-16T12:31:37+00:00",
+  "generated_at": "2026-03-16T13:51:36+00:00",
   "runs": [
+    {
+      "id": "metrics_test2",
+      "title": "metrics_test2",
+      "path": "runs/metrics_test2/display.html",
+      "updated_at": "2026-03-16T13:51:36+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/metrics_test2/metrics.json"
+    },
     {
       "id": "metrics_test",
       "title": "metrics_test",

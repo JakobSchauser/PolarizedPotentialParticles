@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense.linear import Linear
@@ -6,15 +8,16 @@ from torch_geometric.typing import Adj, OptPairTensor, OptTensor, Size
 from torch_geometric.utils import degree
 
 
-from typing import Callable, Tuple, Union
+from typing import Callable, Tuple, TYPE_CHECKING, Union
 from torch import Tensor
 from torch.nn import Parameter
 
-from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.utils import atomize_state
 
+from polarizedpotentialparticles.configs import Config
+
 class CustomNNConv(MessagePassing):
-    def __init__(self, config : Config):
+    def __init__(self, config: Config):
         super().__init__()
 
         self.config = config
@@ -125,7 +128,7 @@ class CustomNNConv(MessagePassing):
 
 
 class HNNConv(MessagePassing):
-    def __init__(self, out_channels: int, config : Config):
+    def __init__(self, out_channels: int, config: Config):
         super().__init__()
 
         self.config = config
@@ -226,7 +229,7 @@ class HNNConv(MessagePassing):
 
 
 class PolarizedHNNConv(MessagePassing):
-    def __init__(self, config : Config):
+    def __init__(self, config: Config):
         super().__init__()
 
         self.config = config

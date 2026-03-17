@@ -1,4 +1,5 @@
-from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle, ParticleType
+from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle
+from polarizedpotentialparticles.particle_types import ParticleType
 from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.losses import compute_loss, compute_losses
 import torch.nn.functional as F

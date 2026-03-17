@@ -1,16 +1,14 @@
-from polarizedpotentialparticles.configs import Config
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from polarizedpotentialparticles.custom_conv import CustomNNConv, HNNConv, PolarizedHNNConv
-from enum import Enum
+from polarizedpotentialparticles.particle_types import ParticleType
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import radius_graph
 
-
-class ParticleType(str, Enum):
-    PARTICLE_OLD = "particle_old"
-    HAMILTONIAN = "hamiltonian"
-    PARTICLE = "particle"
-    POLARIZED_HAMILTONIAN = "polarized_hamiltonian"
+if TYPE_CHECKING:
+    from polarizedpotentialparticles.configs import Config
 
 
 
@@ -62,7 +60,7 @@ def uniform_circular_distribution_batch(num_particles, batch_size, noise, device
 class ParticleOld(torch.nn.Module):
     particle_type_name = ParticleType.PARTICLE_OLD
 
-    def __init__(self, config : Config):
+    def __init__(self, config: Config):
         super().__init__()
         self.config = config
         self.device = torch.device(config.device)
@@ -191,7 +189,7 @@ class ParticleOld(torch.nn.Module):
 class HamiltonianParticle(torch.nn.Module):
     particle_type_name = ParticleType.HAMILTONIAN
 
-    def __init__(self, config : Config):
+    def __init__(self, config: Config):
         super().__init__()
         self.config = config
         self.device = torch.device(config.device)
@@ -283,7 +281,7 @@ class HamiltonianParticle(torch.nn.Module):
 class Particle(torch.nn.Module):
     particle_type_name = ParticleType.PARTICLE
 
-    def __init__(self, config : Config):
+    def __init__(self, config: Config):
         super().__init__()
         self.config = config
         self.device = torch.device(config.device)
@@ -371,7 +369,7 @@ class Particle(torch.nn.Module):
 class PolarizedHamiltonianParticle(torch.nn.Module):
     particle_type_name = ParticleType.POLARIZED_HAMILTONIAN
 
-    def __init__(self, config : Config):
+    def __init__(self, config: Config):
         super().__init__()
         self.config = config
         self.device = torch.device(config.device)
