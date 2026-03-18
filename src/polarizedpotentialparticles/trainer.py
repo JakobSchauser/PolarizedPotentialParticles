@@ -105,7 +105,7 @@ class Trainer:
         self.state_pool = None
         if self.config.loss_config.use_state_pool:
             self.state_pool = StatePool(
-                capacity=128*10,
+                capacity=128,
                 batch_size=self.config.simulation_config.batch_size,
                 config=self.config,
                 device=self.device,

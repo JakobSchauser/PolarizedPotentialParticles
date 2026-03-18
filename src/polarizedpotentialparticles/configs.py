@@ -27,7 +27,7 @@ class LossConfig:
 
     use_state_pool : bool = True
 
-    learning_rate : float = 0.000001
+    learning_rate : float = 0.001
 
     
 
@@ -41,7 +41,7 @@ class Config:
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    N_particles : int = 55
+    N_particles : int = 50
     # N_particles : int = 200
 
     neighbor_radius : float = 0.07*4.

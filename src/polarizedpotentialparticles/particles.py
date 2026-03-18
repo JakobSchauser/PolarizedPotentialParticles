@@ -48,7 +48,7 @@ def uniform_circular_distribution_deterministic(num_particles, noise, device=Non
     return torch.stack((x, y), dim=1)
 
 def uniform_circular_distribution_batch(num_particles, batch_size, noise, device=None):
-    noise = 0.0
+    noise = 0.00
     base_pos = uniform_circular_distribution_deterministic(num_particles, noise=0.00, device=device)
     pos = base_pos.repeat(batch_size, 1)  # shape [batch_size * num_particles, 2]
     pos += noise * torch.randn_like(pos)  # add a small amount of noise to break perfect symmetry
@@ -430,7 +430,7 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
         x_old = x.clone()  # [num_nodes, state_dim]
         x_new = x.clone()  # avoid in-place operations on x which can cause autograd issues
 
-        x_new_potential = x_new[:, :self.config.N_spatial_dim] - dHdx[:, :self.config.N_spatial_dim] * 0.01 + torch.randn_like(dHdx[:, :self.config.N_spatial_dim]) * self.config.noise_level
+        x_new_potential = x_new[:, :self.config.N_spatial_dim] - dHdx[:, :self.config.N_spatial_dim] * 0.02 + torch.randn_like(dHdx[:, :self.config.N_spatial_dim]) * self.config.noise_level
 
 
         
@@ -447,7 +447,7 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
         x_new = torch.cat([x_new_potential, x_new_hidden], dim=1)
 
         # update 1-p of the nodes randomly
-        x = torch.where(torch.rand_like(x) > 0.02, x_new, x_old)
+        x = torch.where(torch.rand_like(x) > 0.5, x_new, x_old)
 
         x.requires_grad_()
 
