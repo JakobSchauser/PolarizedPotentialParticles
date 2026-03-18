@@ -256,7 +256,6 @@ class Trainer:
     def rollout(self, steps) -> tuple[list, list]:
         was_training = self.particle_system.training
         self.particle_system.eval()
-
         x, batch = self.get_initial_state()
         mask0 = batch == 0
         states = [x[mask0].detach().cpu().numpy()]
@@ -280,7 +279,13 @@ class Trainer:
         was_training = self.particle_system.training
         self.particle_system.eval()
 
-        x, batch = self.get_initial_state()
+        # x, batch = self.get_initial_state()
+        if self.state_pool is None:
+            x, batch = self.get_initial_state()
+            pool_indices = None
+        else:
+            pool_indices, x, batch = self.state_pool.sample_batch()
+            
         states = [x.detach().cpu().numpy()]
 
         for _ in range(steps):

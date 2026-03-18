@@ -25,9 +25,9 @@ class ParticleConfig:
 class LossConfig:
     target : Literal["square", "circle", "oval", "donut", "thiccdonut", "smalldonut"] = "square"
 
-    use_state_pool : bool = True
+    use_state_pool : bool = False
 
-    learning_rate : float = 0.001
+    learning_rate : float = 0.0005
 
     
 
