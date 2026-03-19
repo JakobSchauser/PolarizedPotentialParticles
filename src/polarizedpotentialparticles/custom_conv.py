@@ -138,7 +138,7 @@ class HNNConv(MessagePassing):
         arbitrary_size = 8
 
         mlp1 = []
-        mlp1.append(Linear(config.N_spatial_dim + config.particle_config.hidden_dim + 1, 32))
+        mlp1.append(Linear(config.N_spatial_dim + 2*config.particle_config.hidden_dim + 1, 32))
         mlp1.append(torch.nn.ReLU())
         mlp1.append(Linear(32, arbitrary_size)) # arrnitratry size, but why not 
         
@@ -187,7 +187,7 @@ class HNNConv(MessagePassing):
         hidden_j = x_j[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]
 
 
-        edge_attr = torch.cat([dir_ij, dist_ij, hidden_j], dim=-1)  # [num_edges, N_spatial_dim + 1 + hidden_dim]
+        edge_attr = torch.cat([dir_ij, dist_ij, hidden_j - hidden_i, hidden_i], dim=-1)  # [num_edges, N_spatial_dim + 1 + hidden_dim]
 
         return edge_attr
 

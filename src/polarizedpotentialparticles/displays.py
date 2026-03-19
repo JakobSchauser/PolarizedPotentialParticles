@@ -17,6 +17,18 @@ class Displayer:
     def _state_for_display(self, state):
         return state.reshape(self.trainer.config.simulation_config.batch_size, self.trainer.config.N_particles, -1)[-1]
 
+    def _get_animation_interval(self, num_frames: int, duration_seconds: float = 5.0) -> int:
+        """Calculate animation interval in milliseconds to achieve target duration.
+        
+        Args:
+            num_frames: Number of frames in the animation
+            duration_seconds: Target duration in seconds (default: 5.0)
+            
+        Returns:
+            Interval in milliseconds for FuncAnimation
+        """
+        return int((duration_seconds * 1000) / num_frames)
+
     def loss(self):
         losses = [h["loss"] for h in self.trainer.history]
         fig, ax = plt.subplots(figsize=(10, 5))
@@ -79,7 +91,7 @@ class Displayer:
             
             return scat, 
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=50, blit=True)
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
 
         # show as gif in notebook
         anim.save("animation.gif", writer="pillow")
@@ -114,7 +126,7 @@ class Displayer:
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return (scat,)
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
 
         # show as gif in notebook
         anim.save("animation.gif", writer="pillow")
@@ -156,7 +168,7 @@ class Displayer:
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return scat, 
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
 
         # show as gif in notebook
         anim.save("animation_hidden.gif", writer="pillow")
@@ -216,7 +228,7 @@ class Displayer:
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return scat, quiver
 
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
         anim.save("animation_polarity.gif", writer="pillow")
         plt.close(fig)
 
@@ -243,7 +255,7 @@ class Displayer:
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return im,
 
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
         anim.save("animation_gauss.gif", writer="pillow")
         plt.close(fig)
         return pn.panel("animation_gauss.gif", width=self.px_size, height=self.px_size)
@@ -273,7 +285,7 @@ class Displayer:
 
             return im,
 
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
         anim.save("animation_gauss_difference.gif", writer="pillow")
         plt.close(fig)
         return pn.panel("animation_gauss_difference.gif", width=self.px_size, height=self.px_size)
@@ -325,7 +337,7 @@ class Displayer:
             ax.set_ylim(-1.1, 1.1)
             ax.set_zlim(-1.1, 1.1)
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=False)
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=False)
         anim.save("animation_3d.gif", writer="pillow")
         plt.close(fig)
         return pn.panel("animation_3d.gif", width=600, height=600)
@@ -333,12 +345,14 @@ class Displayer:
 
     def final_state(self, rollout : list, losses : list):
         first_state = self._state_for_display(rollout[0])
+        middle_state = self._state_for_display(rollout[len(rollout)//2])
         final_state = self._state_for_display(rollout[-1])
         first_pos = first_state[:, :2]
         pos = final_state[:, :2]
 
         fig, ax = plt.subplots(figsize=(6, 6))
         ax.scatter(first_pos[:, 0], first_pos[:, 1], s=100, alpha=0.5, c="Red", label="Initial State")  # Plot the positions for the first frame
+        ax.scatter(middle_state[:, 0], middle_state[:, 1], s=100, alpha=0.5, c="Green", label="Middle State")  # Plot the positions for the middle frame
         ax.scatter(pos[:, 0], pos[:, 1], s=100, alpha=0.5, c="Blue", label="Final State")  # Plot the positions for the final frame
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(-1.1, 1.1)
@@ -374,7 +388,7 @@ class Displayer:
             
             return scats
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=200, blit=True)
+        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
 
         # show as gif in notebook
         anim.save("animation_batch.gif", writer="pillow")
@@ -389,8 +403,8 @@ class Displayer:
         to_display = []
 
         to_display.append(self.loss())
-        to_display.append(self.loss_types(normalize = False))
-        # to_display.append(self.final_state(rollout, losses))
+        # to_display.append(self.loss_types(normalize = False))
+        to_display.append(self.final_state(rollout, losses))
         to_display.append(self.show_9_runs_from_batch(rollout))
         # to_display.append(self.rollout_as_static(rollout))
         has_hidden_dim = self.trainer.config.particle_config.hidden_dim > 0

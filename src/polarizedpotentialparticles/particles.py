@@ -449,7 +449,7 @@ class PolarizedHamiltonianParticle(torch.nn.Module):
         # update 1-p of the nodes randomly
         x = torch.where(torch.rand_like(x) > 0.5, x_new, x_old)
 
-        x.requires_grad_()
+        # x.requires_grad_()
 
 
         return x

@@ -1,6 +1,24 @@
 {
-  "generated_at": "2026-03-18T10:04:43+00:00",
+  "generated_at": "2026-03-19T10:42:21+00:00",
   "runs": [
+    {
+      "id": "architecture_test",
+      "title": "architecture_test",
+      "path": "runs/architecture_test/display.html",
+      "updated_at": "2026-03-19T10:42:21+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/architecture_test/metrics.json"
+    },
+    {
+      "id": "longer_more_dropout_no_state_pool",
+      "title": "longer_more_dropout_no_state_pool",
+      "path": "runs/longer_more_dropout_no_state_pool/display.html",
+      "updated_at": "2026-03-18T14:04:01+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/longer_more_dropout_no_state_pool/metrics.json"
+    },
     {
       "id": "more_dropout_without_state_pool",
       "title": "more_dropout_without_state_pool",
