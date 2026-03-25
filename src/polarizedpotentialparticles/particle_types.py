@@ -6,3 +6,5 @@ class ParticleType(str, Enum):
     HAMILTONIAN = "hamiltonian"
     PARTICLE = "particle"
     POLARIZED_HAMILTONIAN = "polarized_hamiltonian"
+    EDGE_HAMILTONIAN = "edge_hamiltonian"
+    POLARIZED_EDGE_HAMILTONIAN = "polarized_edge_hamiltonian"

@@ -228,6 +228,67 @@ class HNNConv(MessagePassing):
 
 
 
+class EHNNConv(MessagePassing):
+    """Edge-sum Hamiltonian conv: H_i = sum_j NN(edge_ij). No post-aggregation NN."""
+    def __init__(self, out_channels: int, config: Config):
+        super().__init__()
+
+        self.config = config
+
+        mlp1 = []
+        mlp1.append(Linear(config.N_spatial_dim + 2*config.particle_config.hidden_dim + 1, 32))
+        mlp1.append(torch.nn.ReLU())
+        mlp1.append(Linear(32, out_channels))
+
+        self.nn = torch.nn.Sequential(*mlp1)
+
+        self.reset_parameters()
+
+        self.aggr = 'add'
+
+    def reset_parameters(self):
+        super().reset_parameters()
+        reset(self.nn)
+
+    def make_msg(self, x_i, x_j):
+        r_ij = x_i[:, :self.config.N_spatial_dim] - x_j[:, :self.config.N_spatial_dim]  # [num_edges, N_spatial_dim]
+
+        dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
+
+        dir_ij = r_ij / (dist_ij + 1e-8)  # normalize to get direction
+
+        dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
+
+        hidden_i = x_i[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]
+        hidden_j = x_j[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]
+
+        edge_attr = torch.cat([dir_ij, dist_ij, hidden_j - hidden_i, hidden_i], dim=-1)  # [num_edges, N_spatial_dim + 2*hidden_dim + 1]
+
+        return edge_attr
+
+    def forward(
+        self,
+        x: Union[Tensor, OptPairTensor],
+        edge_index: Adj,
+        batch: OptTensor | None = None,
+    ) -> Tensor:
+        if not isinstance(x, Tensor):
+            raise ValueError("I dont understand Pytorch-error!!!")
+
+        return self.propagate(edge_index, x=x)  # [num_nodes, out_channels]
+
+    def message(self, x_i: Tensor, x_j: Tensor) -> Tensor:
+        # x_i, x_j: [num_edges, state_channels]
+        edge_attr = self.make_msg(x_i, x_j)
+        return self.nn(edge_attr)
+
+    def update(self, aggr_out: Tensor) -> Tensor:
+        # H_i is simply the sum of edge messages — no post-aggregation NN
+        return aggr_out
+
+
+
+
 class PolarizedHNNConv(MessagePassing):
     def __init__(self, config: Config):
         super().__init__()

@@ -11,8 +11,8 @@
     },
     "loss_config": {
         "target": "smalldonut",
-        "use_state_pool": false,
-        "learning_rate": 0.0005
+        "use_state_pool": true,
+        "learning_rate": 0.0001
     },
     "particle_type_name": "polarized_hamiltonian",
     "N_spatial_dim": 2,

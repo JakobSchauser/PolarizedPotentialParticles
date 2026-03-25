@@ -27,7 +27,7 @@ class LossConfig:
 
     use_state_pool : bool = False
 
-    learning_rate : float = 0.0005
+    learning_rate : float = 0.001
 
     
 
@@ -37,11 +37,12 @@ class Config:
     simulation_config : SimulationConfig
     loss_config : LossConfig
 
-    particle_type_name: ParticleType = ParticleType.HAMILTONIAN
+    particle_type_name: ParticleType = ParticleType.EDGE_HAMILTONIAN
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
     N_particles : int = 50
+    starting_radius : float = 0.6
     # N_particles : int = 200
 
     neighbor_radius : float = 0.07*4.
@@ -49,7 +50,7 @@ class Config:
     device : Literal["cpu", "cuda"] = "cuda"
 
     learned_sigma : bool = False
-    sigma : float = (2/2.355) * 0.06
+    sigma : float = (2/2.355) * 0.08
 
 
     noise_level : float = 1e-7

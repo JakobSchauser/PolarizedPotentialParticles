@@ -1,11 +1,20 @@
 {
-  "generated_at": "2026-03-19T10:42:21+00:00",
+  "generated_at": "2026-03-25T10:42:24+00:00",
   "runs": [
+    {
+      "id": "edge_only_test",
+      "title": "edge_only_test",
+      "path": "runs/edge_only_test/display.html",
+      "updated_at": "2026-03-25T10:42:24+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/edge_only_test/metrics.json"
+    },
     {
       "id": "architecture_test",
       "title": "architecture_test",
       "path": "runs/architecture_test/display.html",
-      "updated_at": "2026-03-19T10:42:21+00:00",
+      "updated_at": "2026-03-19T12:17:29+00:00",
       "description": "",
       "tags": [],
       "metrics_path": "runs/architecture_test/metrics.json"
