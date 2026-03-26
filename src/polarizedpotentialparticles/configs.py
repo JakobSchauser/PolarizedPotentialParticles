@@ -14,7 +14,7 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 2
+    hidden_dim : int = 0
     message_latent_dim : int = 8
     zero_initialization : bool = True
     # is_potential : bool = False
@@ -37,12 +37,12 @@ class Config:
     simulation_config : SimulationConfig
     loss_config : LossConfig
 
-    particle_type_name: ParticleType = ParticleType.EDGE_HAMILTONIAN
+    particle_type_name: ParticleType = ParticleType.PARTICLE
 
     N_spatial_dim : int = 2
     N_polarizations : int = 1
-    N_particles : int = 50
-    starting_radius : float = 0.6
+    N_particles : int = 35
+    starting_radius : float = 0.4
     # N_particles : int = 200
 
     neighbor_radius : float = 0.07*4.

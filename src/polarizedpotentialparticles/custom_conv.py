@@ -179,7 +179,7 @@ class HNNConv(MessagePassing):
 
         dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
 
-        dir_ij = r_ij / (dist_ij + 1e-8)  # normalize to get direction, add small epsilon to prevent division by zero
+        dir_ij = r_ij / (dist_ij + 1e-4)  # normalize to get direction, add small epsilon to prevent division by zero
 
         dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
 
@@ -235,12 +235,15 @@ class EHNNConv(MessagePassing):
 
         self.config = config
 
-        mlp1 = []
-        mlp1.append(Linear(config.N_spatial_dim + 2*config.particle_config.hidden_dim + 1, 32))
-        mlp1.append(torch.nn.ReLU())
-        mlp1.append(Linear(32, out_channels))
-
-        self.nn = torch.nn.Sequential(*mlp1)
+        in_channels = config.N_spatial_dim + 2 * config.particle_config.hidden_dim + 1
+        self.heads = torch.nn.ModuleList()
+        for _ in range(out_channels):
+            head = torch.nn.Sequential(
+                Linear(in_channels, 32),
+                torch.nn.ReLU(),
+                Linear(32, 1),
+            )
+            self.heads.append(head)
 
         self.reset_parameters()
 
@@ -248,14 +251,15 @@ class EHNNConv(MessagePassing):
 
     def reset_parameters(self):
         super().reset_parameters()
-        reset(self.nn)
+        for head in self.heads:
+            reset(head)
 
     def make_msg(self, x_i, x_j):
         r_ij = x_i[:, :self.config.N_spatial_dim] - x_j[:, :self.config.N_spatial_dim]  # [num_edges, N_spatial_dim]
 
         dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
 
-        dir_ij = r_ij / (dist_ij + 1e-8)  # normalize to get direction
+        dir_ij = r_ij / (dist_ij + 1e-4)  # normalize to get direction
 
         dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
 
@@ -265,6 +269,52 @@ class EHNNConv(MessagePassing):
         edge_attr = torch.cat([dir_ij, dist_ij, hidden_j - hidden_i, hidden_i], dim=-1)  # [num_edges, N_spatial_dim + 2*hidden_dim + 1]
 
         return edge_attr
+
+    def edge_forces(self, x: Tensor, edge_index: Tensor, create_graph: bool) -> Tensor:
+        """Compute per-node forces by differentiating per-edge energy and summing.
+
+        For each directed edge (j -> i), we predict scalar edge energy E_ij,
+        compute grad wrt r_ij = x_i - x_j, then accumulate action-reaction:
+        F_i += -dE_ij/dr_ij and F_j += +dE_ij/dr_ij.
+        """
+        if len(self.heads) != 1:
+            raise ValueError("edge_forces requires EHNNConv configured with out_channels=1")
+
+        src, dst = edge_index[0], edge_index[1]
+        x_i = x[dst]
+        x_j = x[src]
+
+        # Relative position per directed edge; this is what we differentiate through.
+        r_ij = x_i[:, :self.config.N_spatial_dim] - x_j[:, :self.config.N_spatial_dim]
+        dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)
+        dir_ij = r_ij / (dist_ij + 1e-4)
+        dist_ij = torch.exp(-dist_ij)
+
+        hidden_i = x_i[:, self.config.N_spatial_dim:]
+        hidden_j = x_j[:, self.config.N_spatial_dim:]
+        edge_attr = torch.cat([dir_ij, dist_ij, hidden_j - hidden_i, hidden_i], dim=-1)
+
+        edge_energy = self.heads[0](edge_attr).squeeze(-1)
+        dEdr = torch.autograd.grad(
+            edge_energy.sum(),
+            r_ij,
+            create_graph=create_graph,
+            retain_graph=create_graph,
+        )[0]
+
+        force_i = -dEdr
+        force_j = dEdr
+
+        num_nodes = x.size(0)
+        forces = torch.zeros(
+            (num_nodes, self.config.N_spatial_dim),
+            dtype=x.dtype,
+            device=x.device,
+        )
+        forces.index_add_(0, dst, force_i)
+        forces.index_add_(0, src, force_j)
+
+        return forces
 
     def forward(
         self,
@@ -280,7 +330,8 @@ class EHNNConv(MessagePassing):
     def message(self, x_i: Tensor, x_j: Tensor) -> Tensor:
         # x_i, x_j: [num_edges, state_channels]
         edge_attr = self.make_msg(x_i, x_j)
-        return self.nn(edge_attr)
+        per_head = [head(edge_attr) for head in self.heads]
+        return torch.cat(per_head, dim=-1)
 
     def update(self, aggr_out: Tensor) -> Tensor:
         # H_i is simply the sum of edge messages — no post-aggregation NN
@@ -349,7 +400,7 @@ class PolarizedHNNConv(MessagePassing):
 
         dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
 
-        dir_ij = r_ij / (dist_ij + 1e-8)  # normalize to get direction, add small epsilon to prevent division by zero
+        dir_ij = r_ij / (dist_ij + 1e-4)  # normalize to get direction, add small epsilon to prevent division by zero
 
         dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
 

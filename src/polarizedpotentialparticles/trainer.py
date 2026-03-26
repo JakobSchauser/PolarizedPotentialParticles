@@ -1,4 +1,4 @@
-from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle
+from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle, HEdgeParticle, PolarizedHEdgeParticle 
 from polarizedpotentialparticles.particle_types import ParticleType
 from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.losses import compute_loss, compute_losses
@@ -16,6 +16,8 @@ PARTICLE_TYPES = {
     Particle.particle_type_name: Particle,
     HamiltonianParticle.particle_type_name: HamiltonianParticle,
     PolarizedHamiltonianParticle.particle_type_name: PolarizedHamiltonianParticle,
+    HEdgeParticle.particle_type_name: HEdgeParticle,
+    PolarizedHEdgeParticle.particle_type_name: PolarizedHEdgeParticle,
 }
 
 
@@ -98,6 +100,7 @@ class Trainer:
         self.config.particle_type_name = self.particle_system.particle_type_name
 
         self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=config.loss_config.learning_rate)
+        self.grad_clip_max_norm = 5.0
         self.learning_steps = 0
 
         self.history = []  # to store training history (e.g., losses)s
@@ -105,7 +108,7 @@ class Trainer:
         self.state_pool = None
         if self.config.loss_config.use_state_pool:
             self.state_pool = StatePool(
-                capacity=128,
+                capacity=1024*2,
                 batch_size=self.config.simulation_config.batch_size,
                 config=self.config,
                 device=self.device,
@@ -208,6 +211,7 @@ class Trainer:
 
         if torch.is_grad_enabled():
             total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.particle_system.parameters(), self.grad_clip_max_norm)
             self.optim.step()
             self.learning_steps += 1
 
@@ -237,6 +241,7 @@ class Trainer:
         loss = compute_loss(output, self.config, batch)
         if torch.is_grad_enabled():
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.particle_system.parameters(), self.grad_clip_max_norm)
             self.optim.step()
             self.learning_steps += 1
             self.history.append({"loss": loss.item()})

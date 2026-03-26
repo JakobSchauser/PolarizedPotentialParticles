@@ -530,17 +530,12 @@ class HEdgeParticle(torch.nn.Module):
         self.initialize_architecture()
 
     def initialize_architecture(self):
+        # Predict scalar Hamiltonian per edge; convert to force per edge, then sum.
         self.message_conv = EHNNConv(out_channels=1, config=self.config)
 
-    def update(self, output, x):
+    def update(self, node_force, x):
 
-        need_graph = self.training and torch.is_grad_enabled()
-        dHdx = torch.autograd.grad(
-            output.sum(),
-            x,
-            create_graph=need_graph,
-            retain_graph=need_graph
-        )[0]
+        dHdx = node_force
 
         # clip the updates to prevent exploding gradients
         dHdx = torch.clamp(dHdx, -100., 100.)
@@ -570,6 +565,7 @@ class HEdgeParticle(torch.nn.Module):
 
     def forward(self, x, batch, steps, return_history: bool = False):
         assert self.message_conv is not None
+        assert isinstance(self.message_conv, EHNNConv)
         # x: [B*N, state_channels]
         # batch: [B*N]
 
@@ -583,9 +579,14 @@ class HEdgeParticle(torch.nn.Module):
                 batch=batch,
             )
 
-            output = self.message_conv(x, edge_index, batch=batch)  # [B*N, 1]
+            need_graph = self.training and torch.is_grad_enabled()
+            node_force = self.message_conv.edge_forces(
+                x,
+                edge_index,
+                create_graph=need_graph,
+            )
 
-            x = self.update(output, x)
+            x = self.update(node_force, x)
 
             if return_history and history is not None:
                 history.append(x)
