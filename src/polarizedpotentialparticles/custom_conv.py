@@ -245,9 +245,18 @@ class EHNNConv(MessagePassing):
             )
             self.heads.append(head)
 
+        # Final safety net: if higher-order grads become non-finite, zero/saturate them
+        # before optimizer step so parameters do not get poisoned.
+        def _sanitize_grad(grad: Tensor) -> Tensor:
+            return torch.nan_to_num(grad, nan=0.0, posinf=1e3, neginf=-1e3)
+
+        for param in self.heads.parameters():
+            param.register_hook(_sanitize_grad)
+
         self.reset_parameters()
 
         self.aggr = 'add'
+        self.dist_eps = 1e-6
 
     def reset_parameters(self):
         super().reset_parameters()
@@ -257,9 +266,10 @@ class EHNNConv(MessagePassing):
     def make_msg(self, x_i, x_j):
         r_ij = x_i[:, :self.config.N_spatial_dim] - x_j[:, :self.config.N_spatial_dim]  # [num_edges, N_spatial_dim]
 
-        dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
+        # Use a smooth norm to avoid undefined gradients at r_ij == 0.
+        dist_ij = torch.sqrt(torch.sum(r_ij * r_ij, dim=-1, keepdim=True) + self.dist_eps)  # [num_edges, 1]
 
-        dir_ij = r_ij / (dist_ij + 1e-4)  # normalize to get direction
+        dir_ij = r_ij / dist_ij  # normalize to get direction
 
         dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
 
@@ -280,14 +290,21 @@ class EHNNConv(MessagePassing):
         if len(self.heads) != 1:
             raise ValueError("edge_forces requires EHNNConv configured with out_channels=1")
 
+        if edge_index.numel() == 0:
+            return torch.zeros(
+                (x.size(0), self.config.N_spatial_dim),
+                dtype=x.dtype,
+                device=x.device,
+            )
+
         src, dst = edge_index[0], edge_index[1]
         x_i = x[dst]
         x_j = x[src]
 
         # Relative position per directed edge; this is what we differentiate through.
         r_ij = x_i[:, :self.config.N_spatial_dim] - x_j[:, :self.config.N_spatial_dim]
-        dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)
-        dir_ij = r_ij / (dist_ij + 1e-4)
+        dist_ij = torch.sqrt(torch.sum(r_ij * r_ij, dim=-1, keepdim=True) + self.dist_eps)
+        dir_ij = r_ij / dist_ij
         dist_ij = torch.exp(-dist_ij)
 
         hidden_i = x_i[:, self.config.N_spatial_dim:]

@@ -22,7 +22,7 @@ PARTICLE_TYPES = {
 
 
 class StatePool:
-    def __init__(self, capacity: int, batch_size: int, config: Config, device: torch.device, seed_fn, reseed_count: int = 1):
+    def __init__(self, capacity: int, batch_size: int, config: Config, device: torch.device, seed_fn, reseed_count: int = 6):
         self.capacity = capacity
         self.batch_size = batch_size
         self.config = config
@@ -62,7 +62,10 @@ class StatePool:
     def _graph_loss(self, state):
         s = state.to(self.device)
         b = torch.zeros(s.shape[0], dtype=torch.long, device=self.device)
-        return compute_loss(s, self.config, b).detach().item()
+        loss = compute_loss(s, self.config, b).detach()
+        if not torch.isfinite(loss):
+            return float("inf")
+        return loss.item()
 
     def _seed_graph(self):
         x_seed, batch_seed = self.seed_fn()
@@ -79,10 +82,14 @@ class StatePool:
             idxs = torch.randint(0, len(self.states), (self.batch_size,)).tolist()
 
         sampled = [self.states[i].clone() for i in idxs]
+
+        # If bad states ever enter the pool, replace them immediately.
+        seed_graph = self._seed_graph()
+        sampled = [g if torch.isfinite(g).all() else seed_graph.clone() for g in sampled]
+
         losses = torch.tensor([self._graph_loss(g) for g in sampled])
         order = torch.argsort(losses, descending=True).tolist()
 
-        seed_graph = self._seed_graph()
         for j in range(min(self.reseed_count, len(order))):
             sampled[order[j]] = seed_graph.clone()
 
@@ -90,7 +97,10 @@ class StatePool:
         return idxs, x, batch
 
     def writeback(self, indices, x_out, batch_out):
-        self.set(indices, self._split_graphs(x_out.detach(), batch_out))
+        graphs = self._split_graphs(x_out.detach(), batch_out)
+        seed_graph = self._seed_graph()
+        graphs = [g if torch.isfinite(g).all() else seed_graph.clone() for g in graphs]
+        self.set(indices, graphs)
 
 class Trainer:
     def __init__(self, config : Config):

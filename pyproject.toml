@@ -31,6 +31,7 @@ dependencies = [
     "torch-spline-conv",
     "torchdiffeq>=0.2.5",
     "torchdyn>=1.0.6",
+    "ffmpeg>=1.4",
 ]
 
 [tool.hatch.build]

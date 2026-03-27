@@ -540,13 +540,14 @@ class HEdgeParticle(torch.nn.Module):
         # clip the updates to prevent exploding gradients
         dHdx = torch.clamp(dHdx, -100., 100.)
 
-        random_noise = torch.randn_like(dHdx) * self.config.noise_level
+        random_noise = torch.randn_like(dHdx) * self.config.noise_level * 0.
 
-        newstate = x - (dHdx * 0.01 + random_noise)
+        newstate = x - (dHdx * 0.001 + random_noise)
 
-        x = newstate
+        x = torch.where(torch.rand_like(x) > 0.5, newstate, x)
 
-        x.requires_grad_()  # we need to retain gradients for the updated state to compute the Hamiltonian updates in the next step
+
+        # x.requires_grad_()  # we need to retain gradients for the updated state to compute the Hamiltonian updates in the next step
 
         return x
 
@@ -617,6 +618,7 @@ class PolarizedHEdgeParticle(torch.nn.Module):
         self.hidden_clip = 5.0
 
         self.message_conv : torch.nn.Module | None = None
+        self.hidden_message_conv : torch.nn.Module | None = None
 
         self.setup()
 
@@ -624,21 +626,15 @@ class PolarizedHEdgeParticle(torch.nn.Module):
         self.initialize_architecture()
 
     def initialize_architecture(self):
-        self.message_conv = EHNNConv(out_channels=1 + self.config.particle_config.hidden_dim, config=self.config)
+        self.message_conv = EHNNConv(out_channels=1, config=self.config)
+        self.hidden_message_conv = EHNNConv(
+            out_channels=self.config.particle_config.hidden_dim,
+            config=self.config,
+        )
 
-    def update(self, output, x):
+    def update(self, node_force, hidden_output, x):
 
-        need_graph = self.training and torch.is_grad_enabled()
-
-        potentialoutput = output[:, 0]  # [num_nodes]
-        hidden_output = output[:, 1:]  # [num_nodes, hidden_dim]
-
-        dHdx = torch.autograd.grad(
-            potentialoutput.sum(),
-            x,
-            create_graph=need_graph,
-            retain_graph=need_graph
-        )[0]
+        dHdx = node_force
 
         # clip the updates to prevent exploding gradients
         dHdx = torch.clamp(dHdx, -100., 100.)
@@ -689,6 +685,8 @@ class PolarizedHEdgeParticle(torch.nn.Module):
 
     def forward(self, x, batch, steps, return_history: bool = False):
         assert self.message_conv is not None
+        assert self.hidden_message_conv is not None
+        assert isinstance(self.message_conv, EHNNConv)
         # x: [B*N, state_channels]
         # batch: [B*N]
 
@@ -702,9 +700,15 @@ class PolarizedHEdgeParticle(torch.nn.Module):
                 batch=batch,
             )
 
-            output = self.message_conv(x, edge_index, batch=batch)  # [B*N, 1 + hidden_dim]
+            need_graph = self.training and torch.is_grad_enabled()
+            node_force = self.message_conv.edge_forces(
+                x,
+                edge_index,
+                create_graph=need_graph,
+            )
+            hidden_output = self.hidden_message_conv(x, edge_index, batch=batch)
 
-            x = self.update(output, x)
+            x = self.update(node_force, hidden_output, x)
 
             if return_history and history is not None:
                 history.append(x)

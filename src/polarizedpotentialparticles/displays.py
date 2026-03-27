@@ -1,10 +1,10 @@
 
-from logging import config
 from matplotlib.animation import FuncAnimation
 import panel as pn
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
+import shutil
 from polarizedpotentialparticles.trainer import Trainer
 from polarizedpotentialparticles.losses import gaussian_splat_from_image, gaussian_splat, gaussian_splat_data
 from pathlib import Path
@@ -13,6 +13,9 @@ class Displayer:
     def __init__(self, trainer: Trainer):
         self.trainer = trainer
         self.px_size = 500
+        self.animation_stride = 2
+        self.prefer_mp4 = True
+        self.default_mp4_fps = 24
 
     def _state_for_display(self, state):
         return state.reshape(self.trainer.config.simulation_config.batch_size, self.trainer.config.N_particles, -1)[-1]
@@ -27,7 +30,36 @@ class Displayer:
         Returns:
             Interval in milliseconds for FuncAnimation
         """
-        return int((duration_seconds * 1000) / num_frames)
+        safe_frames = max(1, num_frames)
+        return int((duration_seconds * 1000) / safe_frames)
+
+    def _get_frame_indices(self, num_frames: int) -> list:
+        if num_frames <= 0:
+            return []
+
+        stride = max(1, int(self.animation_stride))
+        frame_indices = list(range(0, num_frames, stride))
+        if frame_indices[-1] != num_frames - 1:
+            frame_indices.append(num_frames - 1)
+        return frame_indices
+
+    def _save_animation(self, anim: FuncAnimation, stem: str, interval_ms: int) -> str:
+        mp4_path = f"{stem}.mp4"
+        gif_path = f"{stem}.gif"
+
+        ffmpeg_available = shutil.which("ffmpeg") is not None
+
+        if self.prefer_mp4 and ffmpeg_available:
+            fps = max(1, int(round(1000 / max(1, interval_ms))))
+            fps = max(fps, self.default_mp4_fps)
+            try:
+                anim.save(mp4_path, writer="ffmpeg", fps=fps)
+                return mp4_path
+            except Exception:
+                pass
+
+        anim.save(gif_path, writer="pillow")
+        return gif_path
 
     def loss(self):
         losses = [h["loss"] for h in self.trainer.history]
@@ -83,7 +115,11 @@ class Displayer:
         ax.set_xlim(x_lim)
         ax.set_ylim(y_lim)
 
-        def update(frame):
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+
+        def update(frame_idx):
+            frame = frame_indices[frame_idx]
             pos = self._state_for_display(rollout[frame])[:, :2]  # Get the positions for the current frame
 
 
@@ -91,14 +127,13 @@ class Displayer:
             
             return scat, 
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
+        anim = FuncAnimation(fig, update, frames=len(frame_indices), interval=interval, blit=True)
 
-        # show as gif in notebook
-        anim.save("animation.gif", writer="pillow")
+        animation_path = self._save_animation(anim, "animation", interval)
         plt.close(fig)
 
 
-        return pn.panel("animation.gif", width=self.px_size, height=self.px_size)
+        return pn.panel(animation_path, width=self.px_size, height=self.px_size)
 
 
 
@@ -119,21 +154,24 @@ class Displayer:
         # display the image in real life coordinates
         ax.imshow(img_grid, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=0.5)
 
-        def update(frame):
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+
+        def update(frame_idx):
+            frame = frame_indices[frame_idx]
             pos = self._state_for_display(rollout[frame])[:, :2]  # Get the positions for the current frame
 
             scat.set_offsets(pos)  # Update the scatter plot with new positions
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return (scat,)
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
+        anim = FuncAnimation(fig, update, frames=len(frame_indices), interval=interval, blit=True)
 
-        # show as gif in notebook
-        anim.save("animation.gif", writer="pillow")
+        animation_path = self._save_animation(anim, "animation", interval)
         plt.close(fig)
 
 
-        return pn.panel("animation.gif", width=self.px_size, height=self.px_size)
+        return pn.panel(animation_path, width=self.px_size, height=self.px_size)
     
     def rollout_image_hidden(self, rollout : list):
         # Create an animation of the particle positions over time
@@ -152,7 +190,11 @@ class Displayer:
         # display the image in real life coordinates
         ax.imshow(img_grid, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=0.5)
 
-        def update(frame):
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+
+        def update(frame_idx):
+            frame = frame_indices[frame_idx]
             pos = self._state_for_display(rollout[frame])[:, :2]  # Get the positions for the current frame
 
             colors = self._state_for_display(rollout[frame])[:, 2]  # Get the hidden state for the current frame
@@ -168,14 +210,13 @@ class Displayer:
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return scat, 
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
+        anim = FuncAnimation(fig, update, frames=len(frame_indices), interval=interval, blit=True)
 
-        # show as gif in notebook
-        anim.save("animation_hidden.gif", writer="pillow")
+        animation_path = self._save_animation(anim, "animation_hidden", interval)
         plt.close(fig)
 
 
-        return pn.panel("animation_hidden.gif", width=self.px_size, height=self.px_size)
+        return pn.panel(animation_path, width=self.px_size, height=self.px_size)
     
     def rollout_image_polarity(self, rollout : list):
         fig, ax = plt.subplots(figsize=(6, 6))
@@ -217,7 +258,11 @@ class Displayer:
             width=0.006,
         )
 
-        def update(frame):
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+
+        def update(frame_idx):
+            frame = frame_indices[frame_idx]
             display_state = self._state_for_display(rollout[frame])
             pos = display_state[:, :2]
             polarity = display_state[:, pol_start:pol_end]
@@ -228,11 +273,11 @@ class Displayer:
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return scat, quiver
 
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
-        anim.save("animation_polarity.gif", writer="pillow")
+        anim = FuncAnimation(fig, update, frames=len(frame_indices), interval=interval, blit=True)
+        animation_path = self._save_animation(anim, "animation_polarity", interval)
         plt.close(fig)
 
-        return pn.panel("animation_polarity.gif", width=self.px_size, height=self.px_size)
+        return pn.panel(animation_path, width=self.px_size, height=self.px_size)
 
 
 
@@ -246,7 +291,11 @@ class Displayer:
         img0 = gaussian_splat_data(pos0, config=self.trainer.config)
         im = ax.imshow(img0, extent=(-1., 1., -1., 1.), origin='lower', cmap='gray', alpha=1.)
 
-        def update(frame):
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+
+        def update(frame_idx):
+            frame = frame_indices[frame_idx]
             ro = rollout[frame][:,:2]
             ro = self._state_for_display(ro)
             ro = torch.tensor(ro)
@@ -255,10 +304,10 @@ class Displayer:
             ax.set_title(f"Frame {frame+1}/{len(rollout)}")
             return im,
 
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
-        anim.save("animation_gauss.gif", writer="pillow")
+        anim = FuncAnimation(fig, update, frames=len(frame_indices), interval=interval, blit=True)
+        animation_path = self._save_animation(anim, "animation_gauss", interval)
         plt.close(fig)
-        return pn.panel("animation_gauss.gif", width=self.px_size, height=self.px_size)
+        return pn.panel(animation_path, width=self.px_size, height=self.px_size)
     
     def rollout_image_gauss_difference(self, rollout : list):
         fig, ax = plt.subplots(figsize=(6, 6))
@@ -272,7 +321,11 @@ class Displayer:
 
         ax.set_title("Diff: ")
 
-        def update(frame):
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+
+        def update(frame_idx):
+            frame = frame_indices[frame_idx]
             ro = rollout[frame][:,:2]
             ro = self._state_for_display(ro)
             ro = torch.tensor(ro)
@@ -285,10 +338,10 @@ class Displayer:
 
             return im,
 
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
-        anim.save("animation_gauss_difference.gif", writer="pillow")
+        anim = FuncAnimation(fig, update, frames=len(frame_indices), interval=interval, blit=True)
+        animation_path = self._save_animation(anim, "animation_gauss_difference", interval)
         plt.close(fig)
-        return pn.panel("animation_gauss_difference.gif", width=self.px_size, height=self.px_size)
+        return pn.panel(animation_path, width=self.px_size, height=self.px_size)
 
 
     def rollout_as_static(self, rollout : list):
@@ -336,11 +389,15 @@ class Displayer:
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(-1.1, 1.1)
             ax.set_zlim(-1.1, 1.1)
+            return tuple()
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=False)
-        anim.save("animation_3d.gif", writer="pillow")
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+
+        anim = FuncAnimation(fig, update, frames=frame_indices, interval=interval, blit=False)
+        animation_path = self._save_animation(anim, "animation_3d", interval)
         plt.close(fig)
-        return pn.panel("animation_3d.gif", width=600, height=600)
+        return pn.panel(animation_path, width=600, height=600)
 
 
     def final_state(self, rollout : list, losses : list):
@@ -378,7 +435,11 @@ class Displayer:
             ax.set_ylim(y_lim)
         
 
-        def update(frame):
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+
+        def update(frame_idx):
+            frame = frame_indices[frame_idx]
 
             for i in range(len(axs)):
                 rol = rollout[frame].reshape(self.trainer.config.simulation_config.batch_size, self.trainer.config.N_particles, -1)
@@ -388,14 +449,13 @@ class Displayer:
             
             return scats
     
-        anim = FuncAnimation(fig, update, frames=len(rollout), interval=self._get_animation_interval(len(rollout)), blit=True)
+        anim = FuncAnimation(fig, update, frames=len(frame_indices), interval=interval, blit=True)
 
-        # show as gif in notebook
-        anim.save("animation_batch.gif", writer="pillow")
+        animation_path = self._save_animation(anim, "animation_batch", interval)
         plt.close(fig)
 
 
-        return pn.panel("animation_batch.gif", width=self.px_size, height=self.px_size)
+        return pn.panel(animation_path, width=self.px_size, height=self.px_size)
     
     
 
@@ -415,7 +475,7 @@ class Displayer:
                 to_display.append(self.rollout_image_hidden(rollout))
         else:
             to_display.append(self.rollout_image(rollout))
-        to_display.append(self.rollout_image_gauss(rollout))
+        # to_display.append(self.rollout_image_gauss(rollout))
         to_display.append(self.rollout_image_gauss_difference(rollout))
 
         panel = self.display_multiple(to_display)
