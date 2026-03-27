@@ -13,7 +13,7 @@ class Displayer:
     def __init__(self, trainer: Trainer):
         self.trainer = trainer
         self.px_size = 500
-        self.animation_stride = 2
+        self.animation_stride = 8
         self.prefer_mp4 = True
         self.default_mp4_fps = 24
 

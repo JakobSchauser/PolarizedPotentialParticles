@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-03-27T11:11:58+00:00",
+  "generated_at": "2026-03-27T14:57:49+00:00",
   "runs": [
     {
       "id": "edge_only_donut_test",
       "title": "edge_only_donut_test",
       "path": "runs/edge_only_donut_test/display.html",
-      "updated_at": "2026-03-27T11:11:58+00:00",
+      "updated_at": "2026-03-27T14:57:49+00:00",
       "description": "",
       "tags": [],
       "metrics_path": "runs/edge_only_donut_test/metrics.json"

@@ -521,6 +521,9 @@ class HEdgeParticle(torch.nn.Module):
         super().__init__()
         self.config = config
         self.device = torch.device(config.device)
+        self.spatial_dim = config.N_spatial_dim
+        self.step_size = 0.001
+        self.force_clip = 100.0
 
         self.message_conv : torch.nn.Module | None = None
 
@@ -533,23 +536,31 @@ class HEdgeParticle(torch.nn.Module):
         # Predict scalar Hamiltonian per edge; convert to force per edge, then sum.
         self.message_conv = EHNNConv(out_channels=1, config=self.config)
 
-    def update(self, node_force, x):
+    def _compute_edge_index(self, x: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
+        return radius_graph(
+            x[:, : self.spatial_dim],
+            r=self.config.neighbor_radius,
+            loop=False,
+            batch=batch,
+        )
 
-        dHdx = node_force
+    def _compute_force(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        assert self.message_conv is not None
+        assert isinstance(self.message_conv, EHNNConv)
+        need_graph = self.training and torch.is_grad_enabled()
+        return self.message_conv.edge_forces(
+            x,
+            edge_index,
+            create_graph=need_graph,
+        )
 
-        # clip the updates to prevent exploding gradients
-        dHdx = torch.clamp(dHdx, -100., 100.)
+    def _apply_update(self, x: torch.Tensor, node_force: torch.Tensor) -> torch.Tensor:
+        # Keep large gradients from causing unstable jumps.
+        clipped_force = torch.clamp(node_force, -self.force_clip, self.force_clip)
+        new_state = x - clipped_force * self.step_size
 
-        random_noise = torch.randn_like(dHdx) * self.config.noise_level * 0.
-
-        newstate = x - (dHdx * 0.001 + random_noise)
-
-        x = torch.where(torch.rand_like(x) > 0.5, newstate, x)
-
-
-        # x.requires_grad_()  # we need to retain gradients for the updated state to compute the Hamiltonian updates in the next step
-
-        return x
+        # Keep existing stochastic partial updates; mask is per-element (existing behavior).
+        return torch.where(torch.rand_like(x) > 0.5, new_state, x)
 
     def get_initial_state(self):
         batch_size = self.config.simulation_config.batch_size
@@ -557,8 +568,8 @@ class HEdgeParticle(torch.nn.Module):
 
         base_pos = uniform_circular_distribution_batch(self.config.N_particles, batch_size, noise=0.01, config=self.config, device=self.device)
 
-        x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim), device=self.device) - 1.) * 0.001
-        x[:, :self.config.N_spatial_dim] = base_pos
+        x = (2. * torch.rand((num_nodes, self.spatial_dim), device=self.device) - 1.) * 0.001
+        x[:, :self.spatial_dim] = base_pos
 
         x.requires_grad_()
         batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
@@ -570,24 +581,15 @@ class HEdgeParticle(torch.nn.Module):
         # x: [B*N, state_channels]
         # batch: [B*N]
 
+        if steps <= 0:
+            return (x, []) if return_history else x
+
         history = [] if return_history else None
 
         for _ in range(steps):
-            edge_index = radius_graph(
-                x[:, : self.config.N_spatial_dim],
-                r=self.config.neighbor_radius,
-                loop=False,
-                batch=batch,
-            )
-
-            need_graph = self.training and torch.is_grad_enabled()
-            node_force = self.message_conv.edge_forces(
-                x,
-                edge_index,
-                create_graph=need_graph,
-            )
-
-            x = self.update(node_force, x)
+            edge_index = self._compute_edge_index(x, batch)
+            node_force = self._compute_force(x, edge_index)
+            x = self._apply_update(x, node_force)
 
             if return_history and history is not None:
                 history.append(x)
