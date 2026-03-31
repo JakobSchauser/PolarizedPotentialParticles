@@ -255,6 +255,13 @@ class EHNNConv(MessagePassing):
 
         self.reset_parameters()
 
+        if self.config.particle_config.zero_initialization:
+            for head in self.heads:
+                final_layer = list(head.children())[-1]
+                if isinstance(final_layer, Linear):
+                    zeros(final_layer.weight)
+                    zeros(final_layer.bias)
+
         self.aggr = 'add'
         self.dist_eps = 1e-6
 
