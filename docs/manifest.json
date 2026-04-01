@@ -1,11 +1,20 @@
 {
-  "generated_at": "2026-03-31T10:06:45+00:00",
+  "generated_at": "2026-03-31T18:18:35+00:00",
   "runs": [
+    {
+      "id": "edge_only_circle_w_pool",
+      "title": "edge_only_circle_w_pool",
+      "path": "runs/edge_only_circle_w_pool/display.html",
+      "updated_at": "2026-03-31T18:18:35+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/edge_only_circle_w_pool/metrics.json"
+    },
     {
       "id": "edge_only_circle2",
       "title": "edge_only_circle2",
       "path": "runs/edge_only_circle2/display.html",
-      "updated_at": "2026-03-31T10:06:45+00:00",
+      "updated_at": "2026-03-31T12:06:10+00:00",
       "description": "",
       "tags": [],
       "metrics_path": "runs/edge_only_circle2/metrics.json"

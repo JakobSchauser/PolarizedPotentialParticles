@@ -11,8 +11,8 @@
     },
     "loss_config": {
         "target": "circle",
-        "use_state_pool": false,
-        "learning_rate": 1e-05
+        "use_state_pool": true,
+        "learning_rate": 0.0001
     },
     "particle_type_name": "edge_hamiltonian",
     "N_spatial_dim": 2,
