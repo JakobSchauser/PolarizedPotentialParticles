@@ -14,7 +14,7 @@ class SimulationConfig:
 
 @dataclass
 class ParticleConfig:
-    hidden_dim : int = 0
+    hidden_dim : int = 2
     message_latent_dim : int = 8
     zero_initialization : bool = True
     # is_potential : bool = False
@@ -23,9 +23,9 @@ class ParticleConfig:
 
 @dataclass
 class LossConfig:
-    target : Literal["square", "circle", "oval", "donut", "thiccdonut", "smalldonut"] = "square"
+    target : Literal["square", "circle", "smallcircle", "oval", "donut", "thiccdonut", "smalldonut"] = "square"
 
-    use_state_pool : bool = True
+    use_state_pool : bool = False
 
     learning_rate : float = 0.001
 
@@ -50,7 +50,7 @@ class Config:
     device : Literal["cpu", "cuda"] = "cuda"
 
     learned_sigma : bool = False
-    sigma : float = (2/2.355) * 0.06
+    sigma : float = (2/2.355) * 0.1
 
 
     noise_level : float = 1e-7

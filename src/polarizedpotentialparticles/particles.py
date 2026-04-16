@@ -645,7 +645,7 @@ class PolarizedHEdgeParticle(torch.nn.Module):
         x_old = x.clone()  # [num_nodes, state_dim]
         x_new = x.clone()  # avoid in-place operations on x which can cause autograd issues
 
-        x_new_potential = x_new[:, :self.config.N_spatial_dim] - dHdx[:, :self.config.N_spatial_dim] * 0.01 + torch.randn_like(dHdx[:, :self.config.N_spatial_dim]) * self.config.noise_level
+        x_new_potential = x_new[:, :self.config.N_spatial_dim] - dHdx[:, :self.config.N_spatial_dim] * 0.01# + torch.randn_like(dHdx[:, :self.config.N_spatial_dim]) * self.config.noise_level
 
         hidden_start = self.config.N_spatial_dim
         hidden_prev = x_new[:, hidden_start:]

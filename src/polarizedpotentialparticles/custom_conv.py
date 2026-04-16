@@ -152,6 +152,12 @@ class HNNConv(MessagePassing):
         self.lin = torch.nn.Sequential(*mlp2)
         self.reset_parameters()
 
+        if self.config.particle_config.zero_initialization:
+            final_layer = self.lin[-1]
+            if isinstance(final_layer, Linear):
+                zeros(final_layer.weight)
+                zeros(final_layer.bias)
+
 
         self.aggr = 'mean'  # or 'mean', 'max', etc. 
 
