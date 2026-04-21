@@ -9,7 +9,7 @@ from polarizedpotentialparticles.particle_types import ParticleType
 class SimulationConfig:
     dt : float = 0.1
     steps : int = 50
-    batch_size : int = 12
+    batch_size : int = 8
 
 
 @dataclass
@@ -50,7 +50,7 @@ class Config:
     device : Literal["cpu", "cuda"] = "cuda"
 
     learned_sigma : bool = False
-    sigma : float = (2/2.355) * 0.1
+    sigma : float = (2/2.355) * 0.07
 
 
     noise_level : float = 1e-7

@@ -1,6 +1,33 @@
 {
-  "generated_at": "2026-04-08T13:27:44+00:00",
+  "generated_at": "2026-04-21T13:45:21+00:00",
   "runs": [
+    {
+      "id": "HC_polarized_donut",
+      "title": "HC_polarized_donut",
+      "path": "runs/HC_polarized_donut/display.html",
+      "updated_at": "2026-04-21T13:45:21+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/HC_polarized_donut/metrics.json"
+    },
+    {
+      "id": "HC_polarized_oval",
+      "title": "HC_polarized_oval",
+      "path": "runs/HC_polarized_oval/display.html",
+      "updated_at": "2026-04-21T10:30:33+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/HC_polarized_oval/metrics.json"
+    },
+    {
+      "id": "HC_polarized",
+      "title": "HC_polarized",
+      "path": "runs/HC_polarized/display.html",
+      "updated_at": "2026-04-17T09:56:14+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/HC_polarized/metrics.json"
+    },
     {
       "id": "normal_polarized_smallcircle_larger",
       "title": "normal_polarized_smallcircle_larger",

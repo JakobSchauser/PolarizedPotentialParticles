@@ -6,10 +6,10 @@ import torch
 from torch_geometric.nn import radius_graph
 
 from polarizedpotentialparticles.configs import Config, LossConfig, ParticleConfig, SimulationConfig
-from polarizedpotentialparticles.custom_conv import EHNNConv
+from polarizedpotentialparticles.custom_conv import EHNNConv, HNNConv
 from polarizedpotentialparticles.losses import compute_loss
 from polarizedpotentialparticles.particle_types import ParticleType
-from polarizedpotentialparticles.particles import HEdgeParticle
+from polarizedpotentialparticles.particles import HEdgeParticle, PolarizedHamiltonianParticleHC
 from polarizedpotentialparticles.trainer import Trainer
 
 
@@ -111,6 +111,35 @@ class TestNanRootCause(unittest.TestCase):
         forces = conv.edge_forces(x, edge_index, create_graph=True)
         assert_finite_tensor(forces, "edge_forces_overlap")
 
+    def test_hnnconv_overlapping_particles_gradient_stays_finite(self) -> None:
+        p_cfg = ParticleConfig(hidden_dim=4, zero_initialization=False)
+        t_cfg = SimulationConfig(dt=0.1, steps=5, batch_size=1)
+        l_cfg = LossConfig(target="smalldonut", use_state_pool=False, learning_rate=1e-4)
+        cfg = Config(
+            particle_config=p_cfg,
+            simulation_config=t_cfg,
+            loss_config=l_cfg,
+            particle_type_name=ParticleType.POLARIZED_HAMILTONIAN_WITH_HC,
+            N_particles=6,
+            starting_radius=0.6,
+            device="cpu",
+        )
+
+        particle = PolarizedHamiltonianParticleHC(cfg)
+        conv = HNNConv(out_channels=1 + cfg.particle_config.hidden_dim, config=cfg)
+
+        x, batch = particle.get_initial_state()
+        x = x.detach().clone()
+        x[1, : cfg.N_spatial_dim] = x[0, : cfg.N_spatial_dim]
+        x.requires_grad_(True)
+
+        edge_index = radius_graph(x[:, : cfg.N_spatial_dim], r=cfg.neighbor_radius, loop=False, batch=batch)
+        output = conv(x, edge_index, batch=batch)
+        dHdx = torch.autograd.grad(output[:, 0].sum(), x, create_graph=True, retain_graph=True)[0]
+
+        assert_finite_tensor(output, "hnnconv_output_overlap")
+        assert_finite_tensor(dHdx, "hnnconv_grad_overlap")
+
     def test_hedge_particle_forward_multistep_is_finite(self) -> None:
         cfg = make_config(use_state_pool=False)
         particle = HEdgeParticle(cfg)
@@ -119,6 +148,153 @@ class TestNanRootCause(unittest.TestCase):
         out = particle(x, batch, steps=30)
 
         assert_finite_tensor(out, "hedge_forward")
+
+    def test_polarized_hamiltonian_hc_hidden_channels_are_clamped(self) -> None:
+        p_cfg = ParticleConfig(hidden_dim=5)
+        t_cfg = SimulationConfig(dt=0.1, steps=5, batch_size=2)
+        l_cfg = LossConfig(target="smalldonut", use_state_pool=False, learning_rate=1e-4)
+        cfg = Config(
+            particle_config=p_cfg,
+            simulation_config=t_cfg,
+            loss_config=l_cfg,
+            particle_type_name=ParticleType.POLARIZED_HAMILTONIAN_WITH_HC,
+            N_particles=8,
+            starting_radius=0.6,
+            device="cpu",
+        )
+
+        particle = PolarizedHamiltonianParticleHC(cfg)
+        x, _batch = particle.get_initial_state()
+        self.assertEqual(x.shape[1], cfg.N_spatial_dim + cfg.particle_config.hidden_dim)
+
+        x = x.detach().clone().requires_grad_(True)
+        output = torch.cat(
+            [
+                (x[:, :1] ** 2).sum(dim=1, keepdim=True),
+                torch.full((x.shape[0], cfg.particle_config.hidden_dim), 1e6),
+            ],
+            dim=1,
+        )
+
+        updated = particle.update(output, x)
+        hidden = updated[:, cfg.N_spatial_dim:]
+        polarization = hidden[:, :2]
+        extra_hidden = hidden[:, 2:]
+
+        assert_finite_tensor(updated, "polarized_hamiltonian_hc_update")
+        self.assertTrue(torch.allclose(torch.linalg.vector_norm(polarization, dim=1), torch.ones(x.shape[0]), atol=1e-5))
+        self.assertTrue(torch.all(extra_hidden <= 10.0))
+        self.assertTrue(torch.all(extra_hidden >= -10.0))
+
+    def test_polarized_hamiltonian_hc_polarization_uses_tangential_update(self) -> None:
+        p_cfg = ParticleConfig(hidden_dim=5, zero_initialization=False)
+        t_cfg = SimulationConfig(dt=0.1, steps=5, batch_size=1)
+        l_cfg = LossConfig(target="smalldonut", use_state_pool=False, learning_rate=1e-4)
+        cfg = Config(
+            particle_config=p_cfg,
+            simulation_config=t_cfg,
+            loss_config=l_cfg,
+            particle_type_name=ParticleType.POLARIZED_HAMILTONIAN_WITH_HC,
+            N_particles=1,
+            starting_radius=0.6,
+            device="cpu",
+        )
+
+        particle = PolarizedHamiltonianParticleHC(cfg)
+        x = torch.tensor([[0.2, -0.1, 1.0, 0.0, 0.0, 0.0, 0.0]], dtype=torch.float32).repeat(8, 1).requires_grad_(True)
+        hidden_output = torch.tensor([[1.0, 1.0, 0.5, -0.5, 0.25]], dtype=torch.float32).repeat(8, 1)
+        output = torch.cat([
+            (x[:, :1] ** 2),
+            hidden_output,
+        ], dim=1)
+
+        torch.manual_seed(0)
+        updated = particle.update(output, x)
+        polarization = updated[:, cfg.N_spatial_dim:cfg.N_spatial_dim + 2]
+        extra_hidden = updated[:, cfg.N_spatial_dim + 2:]
+        original_polarization = x[:, cfg.N_spatial_dim:cfg.N_spatial_dim + 2]
+        original_extra = x[:, cfg.N_spatial_dim + 2:]
+
+        hidden_tanh = torch.tanh(hidden_output)
+        expected_polarization = torch.nn.functional.normalize(
+            torch.tensor([[1.0, particle.hidden_step_size * hidden_tanh[0, 1].item()]], dtype=torch.float32).repeat(8, 1),
+            p=2,
+            dim=1,
+            eps=1e-8,
+        )
+        expected_extra = hidden_tanh[:, 2:]
+
+        assert_finite_tensor(updated, "polarized_hamiltonian_hc_tangential_update")
+        pol_matches_expected = torch.all(torch.isclose(polarization, expected_polarization, atol=1e-6), dim=1)
+        pol_matches_original = torch.all(torch.isclose(polarization, original_polarization, atol=1e-6), dim=1)
+        extra_matches_expected = torch.all(torch.isclose(extra_hidden, expected_extra, atol=1e-6), dim=1)
+        extra_matches_original = torch.all(torch.isclose(extra_hidden, original_extra, atol=1e-6), dim=1)
+
+        self.assertTrue(torch.all(pol_matches_expected | pol_matches_original))
+        self.assertTrue(torch.all(extra_matches_expected | extra_matches_original))
+        self.assertTrue(torch.any(pol_matches_expected))
+        self.assertTrue(torch.any(extra_matches_expected))
+
+    def test_polarized_hamiltonian_hc_initial_state_has_normalized_polarization(self) -> None:
+        p_cfg = ParticleConfig(hidden_dim=4)
+        t_cfg = SimulationConfig(dt=0.1, steps=5, batch_size=2)
+        l_cfg = LossConfig(target="smalldonut", use_state_pool=False, learning_rate=1e-4)
+        cfg = Config(
+            particle_config=p_cfg,
+            simulation_config=t_cfg,
+            loss_config=l_cfg,
+            particle_type_name=ParticleType.POLARIZED_HAMILTONIAN_WITH_HC,
+            N_particles=8,
+            starting_radius=0.6,
+            device="cpu",
+        )
+
+        particle = PolarizedHamiltonianParticleHC(cfg)
+        x_a, _batch_a = particle.get_initial_state()
+        x_b, _batch_b = particle.get_initial_state()
+        polarization = x_a[:, cfg.N_spatial_dim:cfg.N_spatial_dim + 2]
+        extra_hidden = x_a[:, cfg.N_spatial_dim + 2:]
+
+        self.assertTrue(torch.allclose(torch.linalg.vector_norm(polarization, dim=1), torch.ones(x_a.shape[0]), atol=1e-5))
+        self.assertTrue(torch.allclose(x_a, x_b))
+        self.assertFalse(torch.all(extra_hidden == 0.0))
+
+    def test_trainer_builds_polarized_hamiltonian_hc(self) -> None:
+        p_cfg = ParticleConfig(hidden_dim=4)
+        t_cfg = SimulationConfig(dt=0.1, steps=3, batch_size=2)
+        l_cfg = LossConfig(target="smalldonut", use_state_pool=False, learning_rate=1e-4)
+        cfg = Config(
+            particle_config=p_cfg,
+            simulation_config=t_cfg,
+            loss_config=l_cfg,
+            particle_type_name=ParticleType.POLARIZED_HAMILTONIAN_WITH_HC,
+            N_particles=8,
+            starting_radius=0.6,
+            device="cpu",
+        )
+
+        trainer = Trainer(cfg)
+        self.assertIsInstance(trainer.particle_system, PolarizedHamiltonianParticleHC)
+
+    def test_polarized_hamiltonian_hc_forward_nonzero_init_stays_finite(self) -> None:
+        p_cfg = ParticleConfig(hidden_dim=4, zero_initialization=False)
+        t_cfg = SimulationConfig(dt=0.1, steps=5, batch_size=2)
+        l_cfg = LossConfig(target="smalldonut", use_state_pool=False, learning_rate=1e-4)
+        cfg = Config(
+            particle_config=p_cfg,
+            simulation_config=t_cfg,
+            loss_config=l_cfg,
+            particle_type_name=ParticleType.POLARIZED_HAMILTONIAN_WITH_HC,
+            N_particles=12,
+            starting_radius=0.6,
+            device="cpu",
+        )
+
+        particle = PolarizedHamiltonianParticleHC(cfg)
+        x, batch = particle.get_initial_state()
+        out = particle(x, batch, steps=30)
+
+        assert_finite_tensor(out, "polarized_hamiltonian_hc_forward_nonzero_init")
 
     def test_state_pool_sanitizes_non_finite_states(self) -> None:
         cfg = make_config(use_state_pool=True)

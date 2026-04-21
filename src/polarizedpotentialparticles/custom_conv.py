@@ -133,21 +133,22 @@ class HNNConv(MessagePassing):
 
         self.config = config
 
-
-
-        arbitrary_size = 8
+        hidden_width = 64
+        edge_latent_dim = 32
 
         mlp1 = []
-        mlp1.append(Linear(config.N_spatial_dim + 2*config.particle_config.hidden_dim + 1, 32))
+        mlp1.append(Linear(config.N_spatial_dim + 2 * config.particle_config.hidden_dim + 1, hidden_width))
         mlp1.append(torch.nn.ReLU())
-        mlp1.append(Linear(32, arbitrary_size)) # arrnitratry size, but why not 
+        mlp1.append(Linear(hidden_width, edge_latent_dim))
         
         self.nn = torch.nn.Sequential(*mlp1)
 
         mlp2 = []
-        mlp2.append(Linear(arbitrary_size + 1 + config.particle_config.hidden_dim, 32))  # +1 for degree, + own hidden state
+        mlp2.append(Linear(edge_latent_dim + 1 + config.particle_config.hidden_dim, hidden_width))  # +1 for degree, + own hidden state
         mlp2.append(torch.nn.ReLU())
-        mlp2.append(Linear(32, out_channels))
+        mlp2.append(Linear(hidden_width, hidden_width))
+        mlp2.append(torch.nn.ReLU())
+        mlp2.append(Linear(hidden_width, out_channels))
 
         self.lin = torch.nn.Sequential(*mlp2)
         self.reset_parameters()
@@ -158,8 +159,8 @@ class HNNConv(MessagePassing):
                 zeros(final_layer.weight)
                 zeros(final_layer.bias)
 
-
-        self.aggr = 'mean'  # or 'mean', 'max', etc. 
+        self.aggr = 'add'
+        self.dist_eps = 1e-6
 
     def reset_parameters(self):
         super().reset_parameters()
@@ -183,11 +184,11 @@ class HNNConv(MessagePassing):
 
         r_ij = x_i[:, :self.config.N_spatial_dim] - x_j[:, :self.config.N_spatial_dim]  # [num_edges, N_spatial_dim]
 
-        dist_ij = torch.norm(r_ij, dim=-1, keepdim=True)  # [num_edges, 1]
+        dist_ij = torch.sqrt(torch.sum(r_ij * r_ij, dim=-1, keepdim=True) + self.dist_eps)  # [num_edges, 1]
 
-        dir_ij = r_ij / (dist_ij + 1e-4)  # normalize to get direction, add small epsilon to prevent division by zero
+        dir_ij = r_ij / dist_ij  # normalize to get direction with smooth norm
 
-        dist_ij = torch.exp(-dist_ij)  # [num_edges, 1]
+        dist_ij = torch.exp(-dist_ij*4)  # [num_edges, 1]
 
         hidden_i = x_i[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]
         hidden_j = x_j[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]

@@ -1,4 +1,4 @@
-from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle, HEdgeParticle, PolarizedHEdgeParticle 
+from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle, PolarizedHamiltonianParticleHC, HEdgeParticle, PolarizedHEdgeParticle 
 from polarizedpotentialparticles.particle_types import ParticleType
 from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.losses import compute_loss, compute_losses
@@ -16,6 +16,7 @@ PARTICLE_TYPES = {
     Particle.particle_type_name: Particle,
     HamiltonianParticle.particle_type_name: HamiltonianParticle,
     PolarizedHamiltonianParticle.particle_type_name: PolarizedHamiltonianParticle,
+    PolarizedHamiltonianParticleHC.particle_type_name: PolarizedHamiltonianParticleHC,
     HEdgeParticle.particle_type_name: HEdgeParticle,
     PolarizedHEdgeParticle.particle_type_name: PolarizedHEdgeParticle,
 }

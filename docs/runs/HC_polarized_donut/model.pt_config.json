@@ -1,0 +1,27 @@
+{
+    "particle_config": {
+        "hidden_dim": 6,
+        "message_latent_dim": 8,
+        "zero_initialization": false
+    },
+    "simulation_config": {
+        "dt": 0.1,
+        "steps": 50,
+        "batch_size": 8
+    },
+    "loss_config": {
+        "target": "smalldonut",
+        "use_state_pool": false,
+        "learning_rate": 0.0002
+    },
+    "particle_type_name": "polarized_hamiltonian_with_hc",
+    "N_spatial_dim": 2,
+    "N_polarizations": 1,
+    "N_particles": 50,
+    "starting_radius": 0.4,
+    "neighbor_radius": 0.28,
+    "device": "cuda",
+    "learned_sigma": false,
+    "sigma": 0.059447983014862,
+    "noise_level": 1e-07
+}

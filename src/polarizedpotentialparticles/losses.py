@@ -74,7 +74,7 @@ def gaussian_splat(pos, sigma, grid_size=64, normalize=True):
 
 
 def gaussian_splat_data(pos, config : Config):
-    gs =  gaussian_splat(pos, sigma=config.sigma, grid_size=64, normalize=False)
+    gs =  gaussian_splat(pos, sigma=config.sigma, grid_size=64, normalize=True) ##################
     return gs
 
 def gaussian_splat_from_image(img_path, device=None):

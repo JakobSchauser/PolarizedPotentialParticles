@@ -173,7 +173,7 @@ class Displayer:
 
         return pn.panel(animation_path, width=self.px_size, height=self.px_size)
     
-    def rollout_image_hidden(self, rollout : list):
+    def rollout_image_hidden(self, rollout : list, channel : int = 2):
         # Create an animation of the particle positions over time
         fig, ax = plt.subplots(figsize=(6, 6))
         scat = ax.scatter([], [], s=100)  # Initialize an empty scatter plot
@@ -197,7 +197,7 @@ class Displayer:
             frame = frame_indices[frame_idx]
             pos = self._state_for_display(rollout[frame])[:, :2]  # Get the positions for the current frame
 
-            colors = self._state_for_display(rollout[frame])[:, 2]  # Get the hidden state for the current frame
+            colors = self._state_for_display(rollout[frame])[:, channel]  # Get the hidden state for the current frame
 
             scat.set_offsets(pos)  # Update the scatter plot with new positions
             scat.set_array(colors)  # Update the scatter plot with new colors based on hidden state
@@ -471,8 +471,13 @@ class Displayer:
         if has_hidden_dim:
             if self.trainer.config.particle_config.hidden_dim == 2:
                 to_display.append(self.rollout_image_polarity(rollout))
-            else:
+            elif self.trainer.config.particle_config.hidden_dim < 2:
                 to_display.append(self.rollout_image_hidden(rollout))
+            else:
+                to_display.append(self.rollout_image_polarity(rollout))
+                to_display.append(self.rollout_image_hidden(rollout, channel=4))
+
+
         else:
             to_display.append(self.rollout_image(rollout))
         # to_display.append(self.rollout_image_gauss(rollout))
