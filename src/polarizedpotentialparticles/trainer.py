@@ -110,7 +110,7 @@ class Trainer:
         self.particle_system = self._build_particle_system(config).to(self.device)
         self.config.particle_type_name = self.particle_system.particle_type_name
 
-        self.optim = torch.optim.Adam(self.particle_system.parameters(), lr=config.loss_config.learning_rate)
+        self.optim = torch.optim.AdamW(self.particle_system.parameters(), lr=config.loss_config.learning_rate, weight_decay=1e-4)
         self.grad_clip_max_norm = 5.0
         self.learning_steps = 0
 
