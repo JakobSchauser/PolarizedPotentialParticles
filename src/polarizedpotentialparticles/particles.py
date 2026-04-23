@@ -619,7 +619,7 @@ class PolarizedHamiltonianParticleHC(torch.nn.Module):
             raise RuntimeError("NaN before cat in PolarizedHamiltonianParticleHC.update")
 
         x_new = torch.cat([x_new_position, x_new_hidden], dim=1)
-        node_update_mask = torch.rand((x.shape[0], 1), device=x.device) > 0.1
+        node_update_mask = torch.rand((x.shape[0], 1), device=x.device) > 0.5
         x = torch.where(node_update_mask, x_new, x_old)
 
         return x
