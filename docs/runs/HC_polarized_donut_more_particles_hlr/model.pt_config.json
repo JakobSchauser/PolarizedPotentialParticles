@@ -12,16 +12,16 @@
     "loss_config": {
         "target": "thiccdonut",
         "use_state_pool": false,
-        "learning_rate": 0.0001
+        "learning_rate": 3e-05
     },
     "particle_type_name": "polarized_hamiltonian_with_hc",
     "N_spatial_dim": 2,
     "N_polarizations": 1,
     "N_particles": 100,
-    "starting_radius": 0.5,
+    "starting_radius": 0.9,
     "neighbor_radius": 0.28,
     "device": "cuda",
     "learned_sigma": false,
-    "sigma": 0.06794055201698514,
+    "sigma": 0.025477707006369428,
     "noise_level": 1e-07
 }
