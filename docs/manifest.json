@@ -1,6 +1,15 @@
 {
-  "generated_at": "2026-04-23T23:41:29+00:00",
+  "generated_at": "2026-04-24T09:31:00+00:00",
   "runs": [
+    {
+      "id": "HC_polarized_donut_square",
+      "title": "HC_polarized_donut_square",
+      "path": "runs/HC_polarized_donut_square/display.html",
+      "updated_at": "2026-04-24T09:31:00+00:00",
+      "description": "",
+      "tags": [],
+      "metrics_path": "runs/HC_polarized_donut_square/metrics.json"
+    },
     {
       "id": "HC_polarized_donut_more_particles_hlr_long",
       "title": "HC_polarized_donut_more_particles_hlr_long",
