@@ -10,15 +10,15 @@
         "batch_size": 8
     },
     "loss_config": {
-        "target": "thiccdonut",
+        "target": "oval",
         "use_state_pool": true,
         "learning_rate": 1e-05
     },
     "particle_type_name": "polarized_edge_hamiltonian_with_hc",
     "N_spatial_dim": 2,
     "N_polarizations": 1,
-    "N_particles": 100,
-    "starting_radius": 0.9,
+    "N_particles": 50,
+    "starting_radius": 0.5,
     "neighbor_radius": 0.28,
     "device": "cuda",
     "learned_sigma": false,
