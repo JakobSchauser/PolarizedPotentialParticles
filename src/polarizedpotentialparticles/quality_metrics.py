@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from polarizedpotentialparticles.losses import gaussian_splat_data, get_cached_target_grid
+from polarizedpotentialparticles.losses import gaussian_splat_data, gaussian_splat_3d, get_cached_target_grid
 from polarizedpotentialparticles.trainer import Trainer
 
 
@@ -67,11 +67,16 @@ class QualityMetrics:
             self.config.loss_config.target,
             device=positions.device,
             dtype=positions.dtype,
+            sphere_target_radius=self.config.loss_config.sphere_target_radius,
+            sphere_target_sigma=self.config.loss_config.sphere_target_sigma,
         )
 
         correctness_curve = []
         for pos in positions:
-            particle_grid = gaussian_splat_data(pos, self.config)
+            if self.config.N_spatial_dim == 3:
+                particle_grid = gaussian_splat_3d(pos, sigma=self.config.sigma, grid_size=32, normalize=True)
+            else:
+                particle_grid = gaussian_splat_data(pos, self.config)
             correctness_curve.append(torch.mean((target_grid - particle_grid) ** 2))
         correctness_curve = torch.stack(correctness_curve, dim=0)
 

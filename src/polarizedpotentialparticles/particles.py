@@ -48,6 +48,25 @@ def uniform_circular_distribution_deterministic(num_particles, noise, config, de
 
     return torch.stack((x, y), dim=1)
 
+def uniform_spherical_distribution_deterministic(num_particles, noise, config, device=None):
+    noise = 0.00
+    assert config.N_spatial_dim == 3, "uniform_spherical_distribution_deterministic requires N_spatial_dim == 3"
+    radius = config.starting_radius
+    i = torch.arange(num_particles, device=device, dtype=torch.float32)
+    golden_angle = torch.pi * (3.0 - torch.sqrt(torch.tensor(5.0)))
+    theta = i * golden_angle
+    phi = torch.acos(1 - 2 * (i + 0.5) / num_particles)
+    # Uniform volume density: r = radius * cbrt((i+0.5)/N)  (mirrors 2D sqrt for area)
+    r = radius * ((i + 0.5) / num_particles) ** (1.0 / 3.0)
+    x = r * torch.sin(phi) * torch.cos(theta)
+    y = r * torch.sin(phi) * torch.sin(theta)
+    z = r * torch.cos(phi)
+    x += noise * torch.randn_like(x)
+    y += noise * torch.randn_like(y)
+    z += noise * torch.randn_like(z)
+    return torch.stack((x, y, z), dim=1)
+
+
 def uniform_circular_distribution_batch(num_particles, batch_size, noise, config, device=None):
     noise = 0.00
     base_pos = uniform_circular_distribution_deterministic(num_particles, noise=0.00, config= config, device=device)
@@ -248,7 +267,12 @@ class HamiltonianParticle(torch.nn.Module):
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
 
-        base_pos = uniform_circular_distribution_batch(self.config.N_particles, batch_size, noise=0.01, config=self.config, device=self.device)
+        if self.config.N_spatial_dim == 3:
+            base_pos = uniform_spherical_distribution_deterministic(
+                self.config.N_particles, noise=0.01, config=self.config, device=self.device
+            ).repeat(batch_size, 1)
+        else:
+            base_pos = uniform_circular_distribution_batch(self.config.N_particles, batch_size, noise=0.01, config=self.config, device=self.device)
 
         x = (2. * torch.rand((num_nodes, self.config.N_spatial_dim), device=self.device) - 1.) * 0.001
         x[:, :self.config.N_spatial_dim] = base_pos
@@ -529,11 +553,10 @@ class PolarizedHamiltonianParticleHC(torch.nn.Module):
         self.config = config
         self.device = torch.device(config.device)
 
-        if self.config.particle_config.hidden_dim <= 2:
-            raise ValueError(
-                "PolarizedHamiltonianParticleHC requires particle_config.hidden_dim > 2 "
-                f"(got {self.config.particle_config.hidden_dim})."
-            )
+        assert self.config.particle_config.hidden_dim > self.config.N_spatial_dim, (
+            f"PolarizedHamiltonianParticleHC requires hidden_dim > N_spatial_dim "
+            f"(got hidden_dim={self.config.particle_config.hidden_dim}, N_spatial_dim={self.config.N_spatial_dim})"
+        )
 
         self.hidden_step_size = 0.1
         self.hidden_state_clip = 10.0
@@ -577,12 +600,13 @@ class PolarizedHamiltonianParticleHC(torch.nn.Module):
         )
 
         hidden_start = self.config.N_spatial_dim
+        n_pol = self.config.N_spatial_dim  # polarity vector has same dim as space
         hidden_prev = x_new[:, hidden_start:]
-        polarization_prev = hidden_prev[:, :2]
-        extra_hidden_prev = hidden_prev[:, 2:]
+        polarization_prev = hidden_prev[:, :n_pol]
+        extra_hidden_prev = hidden_prev[:, n_pol:]
 
-        polarization_output = hidden_output[:, :2]
-        extra_hidden_output = hidden_output[:, 2:]
+        polarization_output = hidden_output[:, :n_pol]
+        extra_hidden_output = hidden_output[:, n_pol:]
 
         # Treat the polarization head as an angular update by removing the
         # component parallel to the current direction before renormalizing.
@@ -628,13 +652,14 @@ class PolarizedHamiltonianParticleHC(torch.nn.Module):
         batch_size = self.config.simulation_config.batch_size
         num_nodes = batch_size * self.config.N_particles
 
-        base_pos = uniform_circular_distribution_batch(
-            self.config.N_particles,
-            batch_size,
-            noise=0.01,
-            config=self.config,
-            device=self.device,
-        )
+        if self.config.N_spatial_dim == 3:
+            base_pos = uniform_spherical_distribution_deterministic(
+                self.config.N_particles, noise=0.01, config=self.config, device=self.device,
+            ).repeat(batch_size, 1)
+        else:
+            base_pos = uniform_circular_distribution_batch(
+                self.config.N_particles, batch_size, noise=0.01, config=self.config, device=self.device,
+            )
 
         x = torch.zeros(
             (num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim),
@@ -649,8 +674,9 @@ class PolarizedHamiltonianParticleHC(torch.nn.Module):
             seed=0,
             device=self.device,
         )
-        hidden[:, :2] = F.normalize(
-            x[:, :self.config.N_spatial_dim], # radial
+        n_pol = self.config.N_spatial_dim
+        hidden[:, :n_pol] = F.normalize(
+            x[:, :self.config.N_spatial_dim],  # radial direction as initial polarity
             p=2,
             dim=1,
             eps=1e-8,

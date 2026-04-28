@@ -73,6 +73,35 @@ def gaussian_splat(pos, sigma, grid_size=64, normalize=True):
 
 
 
+def gaussian_splat_3d(pos, sigma, grid_size=32, normalize=True):
+    assert pos.shape[1] == 3, "gaussian_splat_3d requires 3D positions (pos.shape[1] == 3)"
+    # pos: [P, 3] in [-1, 1]
+    lin = torch.linspace(-1, 1, grid_size, device=pos.device, dtype=pos.dtype)
+    zz, yy, xx = torch.meshgrid(lin, lin, lin, indexing="ij")  # [G, G, G]
+    px = pos[:, 0].view(-1, 1, 1, 1)  # [P, 1, 1, 1]
+    py = pos[:, 1].view(-1, 1, 1, 1)
+    pz = pos[:, 2].view(-1, 1, 1, 1)
+    d2 = (xx - px) ** 2 + (yy - py) ** 2 + (zz - pz) ** 2  # [P, G, G, G]
+    grid = torch.exp(-d2 / (2 * sigma ** 2)).sum(dim=0)  # [G, G, G]
+    if normalize:
+        grid = grid / (grid.max() + 1e-8)
+    return grid
+
+
+def sphere_shell_target_3d(grid_size=32, sigma=0.1, target_radius=0.7, device=None):
+    # Fibonacci sphere: ~500 uniformly distributed points on a sphere shell
+    N = 500
+    i = torch.arange(N, dtype=torch.float32, device=device)
+    golden_angle = torch.pi * (3.0 - torch.sqrt(torch.tensor(5.0)))
+    theta = i * golden_angle
+    phi = torch.acos(1 - 2 * (i + 0.5) / N)
+    x = target_radius * torch.sin(phi) * torch.cos(theta)
+    y = target_radius * torch.sin(phi) * torch.sin(theta)
+    z = target_radius * torch.cos(phi)
+    pts = torch.stack([x, y, z], dim=1)  # [N, 3]
+    return gaussian_splat_3d(pts, sigma=sigma, grid_size=grid_size, normalize=True)
+
+
 def gaussian_splat_data(pos, config : Config):
     gs =  gaussian_splat(pos, sigma=config.sigma, grid_size=64, normalize=True) ##################
     return gs
@@ -100,30 +129,34 @@ def gaussian_splat_from_image(img_path, device=None):
     return img_grid
 
 
-def get_cached_target_grid(target: str, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-    emoji_path = Path(__file__).resolve().parent / "morphologies" / f"{target}.png"
-    key = (str(emoji_path), str(device), str(dtype))
+def get_cached_target_grid(target: str, device: torch.device, dtype: torch.dtype, sphere_target_radius: float = 0.7, sphere_target_sigma: float = 0.1) -> torch.Tensor:
+    key = (target, str(device), str(dtype), sphere_target_radius, sphere_target_sigma)
     cached = _IMG_GRID_CACHE.get(key)
     if cached is None:
-        cached = gaussian_splat_from_image(emoji_path, device=device).to(dtype=dtype)
+        if target == "sphere":
+            cached = sphere_shell_target_3d(device=device, target_radius=sphere_target_radius, sigma=sphere_target_sigma).to(dtype=dtype)
+        else:
+            emoji_path = Path(__file__).resolve().parent / "morphologies" / f"{target}.png"
+            cached = gaussian_splat_from_image(emoji_path, device=device).to(dtype=dtype)
         _IMG_GRID_CACHE[key] = cached
     return cached
 
 def image_loss(output : torch.Tensor, config : Config) -> torch.Tensor:
     # try to make the particles form an arbitrary shape
-    img_grid = get_cached_target_grid(config.loss_config.target, output.device, output.dtype)
+    img_grid = get_cached_target_grid(config.loss_config.target, output.device, output.dtype, config.loss_config.sphere_target_radius, config.loss_config.sphere_target_sigma)
     
     # gaussian splatting of the particle positions
     pos = output[:, :config.N_spatial_dim]  # [N_particles, N_spatial_dim]
 
     # make the positions be in the same coordinate system as the image ([-1, 1])
-    pos /= 1.0 
+    pos /= 1.0
 
-    particle_grid = gaussian_splat_data(pos, config=config)
+    if config.N_spatial_dim == 3:
+        assert config.loss_config.target == "sphere", "3D loss only supports target='sphere'"
+        particle_grid = gaussian_splat_3d(pos, sigma=config.sigma, grid_size=32, normalize=True)
+    else:
+        particle_grid = gaussian_splat_data(pos, config=config)
 
-    # print(f"Image grid max value: {img_grid.max().item():.4f}")
-    # print(f"Particle grid max value: {particle_grid.max().item():.4f}")
-    # compute mean squared error between the two grids
     loss = torch.mean((img_grid - particle_grid) ** 2)
 
     return loss

@@ -6,7 +6,7 @@ import torch
 import numpy as np
 import shutil
 from polarizedpotentialparticles.trainer import Trainer
-from polarizedpotentialparticles.losses import gaussian_splat_from_image, gaussian_splat, gaussian_splat_data
+from polarizedpotentialparticles.losses import gaussian_splat_from_image, gaussian_splat, gaussian_splat_data, gaussian_splat_3d, get_cached_target_grid
 from pathlib import Path
 
 class Displayer:
@@ -374,6 +374,55 @@ class Displayer:
 
         return pn.panel(fig, width=self.px_size, height=self.px_size)
     
+    def rollout_3d_with_target(self, rollout: list):
+        assert self.trainer.config.N_spatial_dim == 3, "rollout_3d_with_target requires N_spatial_dim == 3"
+
+        # Fibonacci sphere points for target shell visualization
+        N_target = 300
+        i_arr = np.arange(N_target, dtype=np.float32)
+        golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+        theta = i_arr * golden_angle
+        phi = np.arccos(1 - 2 * (i_arr + 0.5) / N_target)
+        radius = self.trainer.config.loss_config.sphere_target_radius
+        tx = radius * np.sin(phi) * np.cos(theta)
+        ty = radius * np.sin(phi) * np.sin(theta)
+        tz = radius * np.cos(phi)
+
+        n_spatial = self.trainer.config.N_spatial_dim
+        # state layout: [pos(n_spatial), polarity(n_spatial), extra_hidden...]
+        color_channel = 2 * n_spatial  # first non-polarization hidden channel
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), subplot_kw={'projection': '3d'})
+
+        def _draw(ax, pos, c_vals, azim):
+            ax.clear()
+            ax.scatter(tx, ty, tz, s=20, alpha=0.15, c="gray")  # target shell
+            ax.scatter(pos[:, 0], pos[:, 1], pos[:, 2], s=100, alpha=0.5, c=c_vals, cmap='viridis')
+            ax.set_xlim(-1.1, 1.1)
+            ax.set_ylim(-1.1, 1.1)
+            ax.set_zlim(-1.1, 1.1)
+            ax.view_init(elev=20, azim=azim)
+
+        def update(frame_idx):
+            frame = self._state_for_display(rollout[frame_idx])
+            pos = frame[:, :n_spatial]
+            if frame.shape[1] > color_channel:
+                col = frame[:, color_channel]
+                c_vals = col.detach().cpu().numpy() if isinstance(col, torch.Tensor) else np.asarray(col)
+            else:
+                c_vals = "blue"
+            _draw(ax1, pos, c_vals, azim=45)
+            _draw(ax2, pos, c_vals, azim=45 + 180)
+            return tuple()
+
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+        anim = FuncAnimation(fig, update, frames=frame_indices, interval=interval, blit=False)
+        animation_path = self._save_animation(anim, "animation_3d_target", interval)
+        plt.close(fig)
+        return pn.panel(animation_path, width=1200, height=600)
+
+
     def rollout_3d(self, rollout : list):
 
         fig, ax = plt.subplots(figsize=(6, 6), subplot_kw={'projection': '3d'})
@@ -459,7 +508,72 @@ class Displayer:
     
     
 
+    def rollout_3d_voxel_error(self, rollout: list):
+        assert self.trainer.config.N_spatial_dim == 3, "rollout_3d_voxel_error requires N_spatial_dim == 3"
+        cfg = self.trainer.config
+        target_grid = get_cached_target_grid(
+            cfg.loss_config.target,
+            device="cpu",
+            dtype=torch.float32,
+            sphere_target_radius=cfg.loss_config.sphere_target_radius,
+            sphere_target_sigma=cfg.loss_config.sphere_target_sigma,
+        ).numpy()  # [G, G, G]
+
+        grid_size = target_grid.shape[0]
+        lin = np.linspace(-1, 1, grid_size)
+        zz, yy, xx = np.meshgrid(lin, lin, lin, indexing="ij")  # each [G, G, G]
+
+        threshold = 0.02  # show voxels above this absolute error
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), subplot_kw={'projection': '3d'})
+
+        def _draw_error(ax, error, azim):
+            ax.clear()
+            pos_mask = error > threshold
+            neg_mask = error < -threshold
+            if pos_mask.any():
+                ax.scatter(xx[pos_mask], yy[pos_mask], zz[pos_mask],
+                           s=10, alpha=0.4, c="blue", label="excess")
+            if neg_mask.any():
+                ax.scatter(xx[neg_mask], yy[neg_mask], zz[neg_mask],
+                           s=10, alpha=0.4, c="red", label="missing")
+            ax.set_xlim(-1.1, 1.1)
+            ax.set_ylim(-1.1, 1.1)
+            ax.set_zlim(-1.1, 1.1)
+            ax.view_init(elev=20, azim=azim)
+
+        def update(frame_idx):
+            frame = self._state_for_display(rollout[frame_idx])
+            pos = frame[:, :3]
+            if isinstance(pos, np.ndarray):
+                pos_t = torch.from_numpy(pos)
+            else:
+                pos_t = pos.detach().cpu()
+            particle_grid = gaussian_splat_3d(pos_t, sigma=cfg.sigma, grid_size=grid_size, normalize=True).numpy()
+            error = particle_grid - target_grid
+            _draw_error(ax1, error, azim=45)
+            _draw_error(ax2, error, azim=45 + 180)
+            return tuple()
+
+        frame_indices = self._get_frame_indices(len(rollout))
+        interval = self._get_animation_interval(len(frame_indices))
+        anim = FuncAnimation(fig, update, frames=frame_indices, interval=interval, blit=False)
+        animation_path = self._save_animation(anim, "animation_3d_voxel_error", interval)
+        plt.close(fig)
+        return pn.panel(animation_path, width=1200, height=600)
+
+    def dashboard_3d(self, rollout, losses):
+        assert self.trainer.config.N_spatial_dim == 3, "dashboard_3d requires N_spatial_dim == 3"
+        to_display = [
+            self.loss(),
+            self.rollout_3d_with_target(rollout),
+            self.rollout_3d_voxel_error(rollout),
+        ]
+        return self.display_multiple(to_display)
+
     def dashboard(self, rollout, losses):
+        if self.trainer.config.N_spatial_dim == 3:
+            return self.dashboard_3d(rollout, losses)
         to_display = []
 
         to_display.append(self.loss())
