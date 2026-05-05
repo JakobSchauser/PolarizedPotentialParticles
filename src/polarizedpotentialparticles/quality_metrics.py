@@ -63,8 +63,13 @@ class QualityMetrics:
         states = torch.stack(states, dim=0)
         positions = states[:, :, : self.config.N_spatial_dim]
 
+        _target = (
+            self.config.loss_config.multiple[0]
+            if self.config.loss_config.multiple is not None
+            else self.config.loss_config.target
+        )
         target_grid = get_cached_target_grid(
-            self.config.loss_config.target,
+            _target,
             device=positions.device,
             dtype=positions.dtype,
             sphere_target_radius=self.config.loss_config.sphere_target_radius,
