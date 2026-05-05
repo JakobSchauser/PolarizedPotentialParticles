@@ -26,7 +26,7 @@ class LossConfig:
     target : Literal["square", "circle", "smallcircle", "oval", "donut", "thiccdonut", "smalldonut", "sphere"] = "square"
     sphere_target_radius : float = 0.7  # radius of the target sphere shell (only used when target == "sphere")
     sphere_target_sigma : float = 0.1   # gaussian blur thickness of the target shell (larger = thicker)
-
+    multiple : list | None = None  # if not None, will be used to multiply the target (e.g. to create multiple rings)
     use_state_pool : bool = False
 
     learning_rate : float = 0.001
