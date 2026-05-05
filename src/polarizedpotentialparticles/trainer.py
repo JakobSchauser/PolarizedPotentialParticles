@@ -180,12 +180,26 @@ class Trainer:
     
 
 
+    def _encode_target_channel(self, x: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
+        """Write a normalised target-index float into the last hidden channel."""
+        multiple = self.config.loss_config.multiple
+        if multiple is None:
+            return x
+        n = len(multiple)
+        x = x.clone()
+        for b in torch.unique(batch):
+            mask = batch == b
+            x[mask, -1] = (int(b.item()) % n) / max(1, n - 1)
+        return x
+
     def get_initial_state(self):
         # You can choose between random or regular initial states
         # return self.get_initial_state_regular()
         # return self.get_initial_state_random()
         x, batch = self.particle_system.get_initial_state()
-        return x.to(self.device), batch.to(self.device)
+        x, batch = x.to(self.device), batch.to(self.device)
+        x = self._encode_target_channel(x, batch)
+        return x, batch
 
     def train_accumulated(self, optim_steps, accumulate_loss: bool, step_loss: bool):
         if self.state_pool is None:

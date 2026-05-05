@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from dataclasses import replace
 from pathlib import Path
 from PIL import Image
 
@@ -38,11 +39,21 @@ def compute_loss(output : torch.Tensor, config : Config, batch : torch.Tensor) -
     losses = compute_losses(output, config, batch)
     return torch.stack(losses).mean()
 
+def _image_loss_for_target(output: torch.Tensor, config: Config, target: str) -> torch.Tensor:
+    patched = replace(config, loss_config=replace(config.loss_config, target=target))
+    return image_loss(output, patched)
+
+
 def compute_losses(output : torch.Tensor, config : Config, batch : torch.Tensor) -> list[torch.Tensor]:
+    multiple = config.loss_config.multiple
     losses = []
     for b in torch.unique(batch):
         mask = batch == b
-        losses.append(image_loss(output[mask], config))
+        if multiple is not None:
+            target = multiple[int(b.item()) % len(multiple)]
+            losses.append(_image_loss_for_target(output[mask], config, target))
+        else:
+            losses.append(image_loss(output[mask], config))
     return losses
 
 
@@ -102,6 +113,29 @@ def sphere_shell_target_3d(grid_size=32, sigma=0.1, target_radius=0.7, device=No
     return gaussian_splat_3d(pts, sigma=sigma, grid_size=grid_size, normalize=True)
 
 
+def plane_target_3d(grid_size=32, sigma=0.1, target_radius=0.7, device=None):
+    # Uniformly sampled disc in the XY plane (z=0)
+    N = 500
+    r = torch.sqrt(torch.rand(N, device=device)) * target_radius
+    theta = torch.rand(N, device=device) * 2 * torch.pi
+    x = r * torch.cos(theta)
+    y = r * torch.sin(theta)
+    z = torch.zeros(N, device=device)
+    pts = torch.stack([x, y, z], dim=1)  # [N, 3]
+    return gaussian_splat_3d(pts, sigma=sigma, grid_size=grid_size, normalize=True)
+
+
+def tube_target_3d(grid_size=32, sigma=0.1, target_radius=0.7, device=None):
+    # Open cylinder shell: radius = target_radius, z in [-0.8, 0.8]
+    N = 500
+    theta = torch.rand(N, device=device) * 2 * torch.pi
+    x = target_radius * torch.cos(theta)
+    y = target_radius * torch.sin(theta)
+    z = torch.rand(N, device=device) * 1.6 - 0.8
+    pts = torch.stack([x, y, z], dim=1)  # [N, 3]
+    return gaussian_splat_3d(pts, sigma=sigma, grid_size=grid_size, normalize=True)
+
+
 def gaussian_splat_data(pos, config : Config):
     gs =  gaussian_splat(pos, sigma=config.sigma, grid_size=64, normalize=True) ##################
     return gs
@@ -135,6 +169,10 @@ def get_cached_target_grid(target: str, device: torch.device, dtype: torch.dtype
     if cached is None:
         if target == "sphere":
             cached = sphere_shell_target_3d(device=device, target_radius=sphere_target_radius, sigma=sphere_target_sigma).to(dtype=dtype)
+        elif target == "plane":
+            cached = plane_target_3d(device=device, target_radius=sphere_target_radius, sigma=sphere_target_sigma).to(dtype=dtype)
+        elif target == "tube":
+            cached = tube_target_3d(device=device, target_radius=sphere_target_radius, sigma=sphere_target_sigma).to(dtype=dtype)
         else:
             emoji_path = Path(__file__).resolve().parent / "morphologies" / f"{target}.png"
             cached = gaussian_splat_from_image(emoji_path, device=device).to(dtype=dtype)
@@ -152,7 +190,6 @@ def image_loss(output : torch.Tensor, config : Config) -> torch.Tensor:
     pos /= 1.0
 
     if config.N_spatial_dim == 3:
-        assert config.loss_config.target == "sphere", "3D loss only supports target='sphere'"
         particle_grid = gaussian_splat_3d(pos, sigma=config.sigma, grid_size=32, normalize=True)
     else:
         particle_grid = gaussian_splat_data(pos, config=config)
