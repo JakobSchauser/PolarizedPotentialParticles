@@ -41,6 +41,11 @@ class Config:
 
     particle_type_name: ParticleType = ParticleType.PARTICLE
 
+    # "none"         — no conditioning signal at all
+    # "initial_only" — (default, backward-compat) target index encoded once into last hidden channel at init
+    # "concat"       — target index re-injected at every GNN step as an extra transient input channel
+    conditioning_mode: Literal["none", "initial_only", "concat"] = "initial_only"
+
     N_spatial_dim : int = 2
     N_polarizations : int = 1
     N_particles : int = 35
@@ -86,4 +91,12 @@ class Config:
     @property
     def out_dim(self) -> int:
         return self.N_spatial_dim * self.N_polarizations + self.particle_config.hidden_dim
+
+    @property
+    def cond_dim(self) -> int:
+        """Extra conditioning channels appended transiently to x before each GNN call.
+        Only non-zero when conditioning_mode == 'concat' and multiple targets are set."""
+        if self.conditioning_mode == "concat" and self.loss_config.multiple is not None:
+            return 1
+        return 0
 

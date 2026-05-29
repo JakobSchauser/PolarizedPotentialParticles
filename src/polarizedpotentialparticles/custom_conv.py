@@ -136,15 +136,21 @@ class HNNConv(MessagePassing):
         hidden_width = 64
         edge_latent_dim = 32
 
+        # When conditioning_mode == "concat", the particle state passed to the conv is
+        # x_in = cat([x, cond], dim=-1) so the effective hidden dim is wider by cond_dim.
+        eff_hidden = config.particle_config.hidden_dim + config.cond_dim
+
         mlp1 = []
-        mlp1.append(Linear(config.N_spatial_dim + 2 * config.particle_config.hidden_dim + 1, hidden_width))
+        mlp1.append(Linear(config.N_spatial_dim + 2 * eff_hidden + 1, hidden_width))
         mlp1.append(torch.nn.ReLU())
         mlp1.append(Linear(hidden_width, edge_latent_dim))
         
         self.nn = torch.nn.Sequential(*mlp1)
 
         mlp2 = []
-        mlp2.append(Linear(edge_latent_dim + 1 + config.particle_config.hidden_dim, hidden_width))  # +1 for degree, + own hidden state
+        mlp2.append(Linear(edge_latent_dim + 1 + eff_hidden, hidden_width))  # +1 for degree, + own hidden state
+        mlp2.append(torch.nn.ReLU())
+        mlp2.append(Linear(hidden_width, hidden_width))
         mlp2.append(torch.nn.ReLU())
         mlp2.append(Linear(hidden_width, hidden_width))
         mlp2.append(torch.nn.ReLU())
@@ -230,6 +236,117 @@ class HNNConv(MessagePassing):
         out = torch.cat([deg, aggr_out, hidden_i], dim=-1)
         out = self.lin(out) 
         return out
+    
+
+class DistanceHNNConv(MessagePassing):
+    def __init__(self, out_channels: int, config: Config):
+        super().__init__()
+
+        self.config = config
+
+        hidden_width = 64
+        edge_latent_dim = 32
+
+        eff_hidden = config.particle_config.hidden_dim + config.cond_dim
+
+        mlp1 = []
+        mlp1.append(Linear(config.N_spatial_dim + eff_hidden + 1, hidden_width))
+        mlp1.append(torch.nn.ReLU())
+        mlp1.append(Linear(hidden_width, edge_latent_dim))
+        
+        self.nn = torch.nn.Sequential(*mlp1)
+
+        mlp2 = []
+        mlp2.append(Linear(edge_latent_dim + 1 + eff_hidden, hidden_width))  # +1 for degree, + own hidden state
+        mlp2.append(torch.nn.ReLU())
+        mlp2.append(Linear(hidden_width, hidden_width))
+        mlp2.append(torch.nn.ReLU())
+        mlp2.append(Linear(hidden_width, hidden_width))
+        mlp2.append(torch.nn.ReLU())
+        mlp2.append(Linear(hidden_width, out_channels))
+
+        self.lin = torch.nn.Sequential(*mlp2)
+        self.reset_parameters()
+
+        if self.config.particle_config.zero_initialization:
+            final_layer = self.lin[-1]
+            if isinstance(final_layer, Linear):
+                zeros(final_layer.weight)
+                zeros(final_layer.bias)
+
+        self.aggr = 'add'
+        self.dist_eps = 1e-6
+
+    def reset_parameters(self):
+        super().reset_parameters()
+        reset(self.nn)
+        reset(self.lin)
+
+
+    def make_msg(self, x_i, x_j):
+		# rel_ij =  Dist_ij, 
+
+        #           dot(pi,pj), 
+        #           dot(qi, qj), 
+
+        #           dot(r_ij, pi), 
+        #           dot(r_ij, qi), 
+
+        #           hidden_j - hidden_i, 
+        #           hidden_j, 
+        #
+        #           # dim = 1 + 2 + 2 + 2*n_hidden_dim
+
+        r_ij = x_i[:, :self.config.N_spatial_dim] - x_j[:, :self.config.N_spatial_dim]  # [num_edges, N_spatial_dim]
+
+        dist_ij = torch.sqrt(torch.sum(r_ij * r_ij, dim=-1, keepdim=True) + self.dist_eps)  # [num_edges, 1]
+
+        weighted_dist = torch.exp(-dist_ij*4)  # [num_edges, 1]
+
+        dir_ij = r_ij / dist_ij  # normalize to get direction with smooth norm
+
+        hidden_i = x_i[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]
+        hidden_j = x_j[:, self.config.N_spatial_dim:]  # [num_edges, hidden_dim]
+
+
+        edge_attr = torch.cat([dir_ij / weighted_dist, (hidden_j - hidden_i) / weighted_dist, weighted_dist], dim=-1)  # [num_edges, N_spatial_dim + 1 + hidden_dim]
+
+        return edge_attr
+
+
+    def forward(
+        self,
+        x: Union[Tensor, OptPairTensor],
+        edge_index: Adj,
+        batch: OptTensor | None = None,
+    ) -> Tensor:
+        if not isinstance(x, Tensor):
+            raise ValueError("I dont understand Pytorch-error!!!")
+
+        deg = degree(edge_index[0], num_nodes=x.size(0), dtype=x.dtype).unsqueeze(-1)  # Maybe Batch??
+        return self.propagate(edge_index, x=x, deg=deg, batch=batch) # [num_nodes, out_channels]
+
+
+    def message(self, x_i : Tensor, x_j: Tensor, ) -> Tensor:
+        # x_i, x_j: [num_edges, state_channels]
+
+        edge_attr = self.make_msg(x_i, x_j)
+
+        conv = self.nn(edge_attr)
+
+
+        return conv
+
+
+    def update(self, aggr_out: Tensor, x : Tensor, deg: Tensor) -> Tensor:
+
+        hidden_i = x[:, self.config.N_spatial_dim:]  # [num_nodes, hidden_dim]
+
+        out = torch.cat([deg, aggr_out, hidden_i], dim=-1)
+        out = self.lin(out) 
+        return out
+    
+
     
 
 

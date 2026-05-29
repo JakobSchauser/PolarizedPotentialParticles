@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from polarizedpotentialparticles.custom_conv import CustomNNConv, HNNConv, EHNNConv, PolarizedHNNConv
+from polarizedpotentialparticles.custom_conv import CustomNNConv, HNNConv, EHNNConv, PolarizedHNNConv, DistanceHNNConv
 from polarizedpotentialparticles.particle_types import ParticleType
 import torch
 import torch.nn.functional as F
@@ -687,7 +687,7 @@ class PolarizedHamiltonianParticleHC(torch.nn.Module):
         batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
         return x, batch
 
-    def forward(self, x, batch, steps, return_history: bool = False):
+    def forward(self, x, batch, steps, return_history: bool = False, cond: "torch.Tensor | None" = None):
         assert self.message_conv is not None
 
         history = [] if return_history else None
@@ -700,7 +700,12 @@ class PolarizedHamiltonianParticleHC(torch.nn.Module):
                 batch=batch,
             )
 
-            output = self.message_conv(x, edge_index, batch=batch)
+            # In concat-conditioning mode, append the conditioning signal to x before
+            # the GNN call so the network sees a fresh target cue every step.
+            # Gradients flow back through cat to x correctly for Hamiltonian autograd.
+            x_in = torch.cat([x, cond], dim=-1) if cond is not None else x
+
+            output = self.message_conv(x_in, edge_index, batch=batch)
             x = self.update(output, x)
 
             if return_history and history is not None:
@@ -711,6 +716,178 @@ class PolarizedHamiltonianParticleHC(torch.nn.Module):
 
         return x
 
+
+
+class DistancePolarizedHamiltonianParticleHC(torch.nn.Module):
+    particle_type_name = ParticleType.DISTANCE_POLARIZED_HAMILTONIAN_WITH_HC
+
+    def __init__(self, config: Config):
+        super().__init__()
+        self.config = config
+        self.device = torch.device(config.device)
+
+        assert self.config.particle_config.hidden_dim > self.config.N_spatial_dim, (
+            f"PolarizedHamiltonianParticleHC requires hidden_dim > N_spatial_dim "
+            f"(got hidden_dim={self.config.particle_config.hidden_dim}, N_spatial_dim={self.config.N_spatial_dim})"
+        )
+
+        self.hidden_step_size = 0.1
+        self.hidden_state_clip = 10.0
+
+        self.message_conv: torch.nn.Module | None = None
+        self.own_state_nn: torch.nn.Module | None = None
+
+        self.setup()
+
+    def setup(self):
+        self.initialize_architecture()
+
+    def initialize_architecture(self):
+        self.message_conv = DistanceHNNConv(
+            out_channels=1 + self.config.particle_config.hidden_dim,
+            config=self.config,
+        )
+
+    def update(self, output, x):
+        need_graph = self.training and torch.is_grad_enabled()
+
+        potential_output = output[:, 0]
+        hidden_output = torch.tanh(output[:, 1:])
+        dHdx = torch.autograd.grad(
+            potential_output.sum(),
+            x,
+            create_graph=need_graph,
+            retain_graph=need_graph,
+        )[0]
+
+        dHdx = torch.nan_to_num(dHdx, nan=0.0, posinf=100.0, neginf=-100.0)
+        dHdx = torch.clamp(dHdx, -100.0, 100.0)
+
+        x_old = x.clone()
+        x_new = x.clone()
+
+        x_new_position = (
+            x_new[:, :self.config.N_spatial_dim]
+            - dHdx[:, :self.config.N_spatial_dim] * 0.01
+            + torch.randn_like(dHdx[:, :self.config.N_spatial_dim]) * self.config.noise_level
+        )
+
+        hidden_start = self.config.N_spatial_dim
+        n_pol = self.config.N_spatial_dim  # polarity vector has same dim as space
+        hidden_prev = x_new[:, hidden_start:]
+        polarization_prev = hidden_prev[:, :n_pol]
+        extra_hidden_prev = hidden_prev[:, n_pol:]
+
+        polarization_output = hidden_output[:, :n_pol]
+        extra_hidden_output = hidden_output[:, n_pol:]
+
+        # Treat the polarization head as an angular update by removing the
+        # component parallel to the current direction before renormalizing.
+        polarization_tangent = polarization_output - torch.sum(
+            polarization_output * polarization_prev,
+            dim=1,
+            keepdim=True,
+        ) * polarization_prev
+        
+        polarization = F.normalize(
+            polarization_prev + self.hidden_step_size * polarization_tangent,
+            p=2,
+            dim=1,
+            eps=1e-8,
+        )
+
+        # Keep the non-polarization hidden channels as a direct predicted state-change.
+        extra_hidden = extra_hidden_prev + self.hidden_step_size * extra_hidden_output
+
+        if extra_hidden.numel() > 0:
+            extra_hidden = torch.clamp(
+                extra_hidden,
+                -self.hidden_state_clip,
+                self.hidden_state_clip,
+            )
+            x_new_hidden = torch.cat([polarization, extra_hidden], dim=1)
+        else:
+            x_new_hidden = polarization
+
+        x_new_position = torch.nan_to_num(x_new_position, nan=0.0, posinf=1e3, neginf=-1e3)
+        x_new_hidden = torch.nan_to_num(x_new_hidden, nan=0.0, posinf=self.hidden_state_clip, neginf=-self.hidden_state_clip)
+
+        if not torch.isfinite(x_new_position).all() or not torch.isfinite(x_new_hidden).all():
+            raise RuntimeError("NaN before cat in PolarizedHamiltonianParticleHC.update")
+
+        x_new = torch.cat([x_new_position, x_new_hidden], dim=1)
+        node_update_mask = torch.rand((x.shape[0], 1), device=x.device) > 0.5
+        x = torch.where(node_update_mask, x_new, x_old)
+
+        return x
+
+    def get_initial_state(self):
+        batch_size = self.config.simulation_config.batch_size
+        num_nodes = batch_size * self.config.N_particles
+
+        if self.config.N_spatial_dim == 3:
+            base_pos = uniform_spherical_distribution_deterministic(
+                self.config.N_particles, noise=0.01, config=self.config, device=self.device,
+            ).repeat(batch_size, 1)
+        else:
+            base_pos = uniform_circular_distribution_batch(
+                self.config.N_particles, batch_size, noise=0.01, config=self.config, device=self.device,
+            )
+
+        x = torch.zeros(
+            (num_nodes, self.config.N_spatial_dim + self.config.particle_config.hidden_dim),
+            device=self.device,
+        )
+        x[:, :self.config.N_spatial_dim] = base_pos
+
+        hidden = deterministic_normal_distribution_batch(
+            self.config.N_particles,
+            batch_size,
+            self.config.particle_config.hidden_dim,
+            seed=0,
+            device=self.device,
+        )
+        n_pol = self.config.N_spatial_dim
+        hidden[:, :n_pol] = F.normalize(
+            x[:, :self.config.N_spatial_dim],  # radial direction as initial polarity
+            p=2,
+            dim=1,
+            eps=1e-8,
+        )
+        x[:, self.config.N_spatial_dim:] = hidden
+        x.requires_grad_()
+
+        batch = torch.arange(batch_size, device=self.device).repeat_interleave(self.config.N_particles)
+        return x, batch
+
+    def forward(self, x, batch, steps, return_history: bool = False, cond: "torch.Tensor | None" = None):
+        assert self.message_conv is not None
+
+        history = [] if return_history else None
+
+        for _ in range(steps):
+            edge_index = radius_graph(
+                x[:, : self.config.N_spatial_dim],
+                r=self.config.neighbor_radius,
+                loop=False,
+                batch=batch,
+            )
+
+            # In concat-conditioning mode, append the conditioning signal to x before
+            # the GNN call so the network sees a fresh target cue every step.
+            # Gradients flow back through cat to x correctly for Hamiltonian autograd.
+            x_in = torch.cat([x, cond], dim=-1) if cond is not None else x
+
+            output = self.message_conv(x_in, edge_index, batch=batch)
+            x = self.update(output, x)
+
+            if return_history and history is not None:
+                history.append(x)
+
+        if return_history:
+            return x, history
+
+        return x
 
 class HEdgeParticle(torch.nn.Module):
     particle_type_name = ParticleType.EDGE_HAMILTONIAN

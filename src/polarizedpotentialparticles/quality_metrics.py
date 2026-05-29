@@ -47,12 +47,13 @@ class QualityMetrics:
 
         x0, batch = trainer.get_initial_state()
         x = x0.detach()
+        cond = trainer._make_cond(batch)
         mask0 = batch == 0
 
         states = [x[mask0].detach()]
         for _ in range(steps):
             x.requires_grad_(True)
-            out = trainer.particle_system(x, batch, steps=1)
+            out = trainer.particle_system(x, batch, steps=1, cond=cond)
             x = out.detach()
             states.append(x[mask0].detach())
 

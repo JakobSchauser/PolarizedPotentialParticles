@@ -1,4 +1,4 @@
-from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle, PolarizedHamiltonianParticleHC, HEdgeParticle, PolarizedHEdgeParticle, PolarizedHEdgeParticleHC
+from polarizedpotentialparticles.particles import Particle, ParticleOld, HamiltonianParticle, PolarizedHamiltonianParticle, PolarizedHamiltonianParticleHC, HEdgeParticle, PolarizedHEdgeParticle, PolarizedHEdgeParticleHC, DistancePolarizedHamiltonianParticleHC
 from polarizedpotentialparticles.particle_types import ParticleType
 from polarizedpotentialparticles.configs import Config
 from polarizedpotentialparticles.losses import compute_loss, compute_losses
@@ -20,6 +20,7 @@ PARTICLE_TYPES = {
     HEdgeParticle.particle_type_name: HEdgeParticle,
     PolarizedHEdgeParticle.particle_type_name: PolarizedHEdgeParticle,
     PolarizedHEdgeParticleHC.particle_type_name: PolarizedHEdgeParticleHC,
+    DistancePolarizedHamiltonianParticleHC.particle_type_name: DistancePolarizedHamiltonianParticleHC
 }
 
 
@@ -181,7 +182,7 @@ class Trainer:
 
 
     def _encode_target_channel(self, x: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
-        """Write a normalised target-index float into the last hidden channel."""
+        """Write a normalised target-index float into the last hidden channel (initial_only mode)."""
         multiple = self.config.loss_config.multiple
         if multiple is None:
             return x
@@ -192,13 +193,31 @@ class Trainer:
             x[mask, -1] = (int(b.item()) % n) / max(1, n - 1)
         return x
 
+    def _make_cond(self, batch: torch.Tensor) -> "torch.Tensor | None":
+        """Build a [B*N, 1] conditioning tensor (normalised target index) for concat mode.
+        Returns None when conditioning_mode != 'concat' or no multiple targets are set."""
+        if self.config.conditioning_mode != "concat":
+            return None
+        multiple = self.config.loss_config.multiple
+        if multiple is None:
+            return None
+        n = len(multiple)
+        cond = torch.zeros(batch.shape[0], 1, device=self.device, dtype=torch.float32)
+        for b in torch.unique(batch):
+            mask = batch == b
+            cond[mask, 0] = (int(b.item()) % n) / max(1, n - 1)
+        return cond
+
     def get_initial_state(self):
         # You can choose between random or regular initial states
         # return self.get_initial_state_regular()
         # return self.get_initial_state_random()
         x, batch = self.particle_system.get_initial_state()
         x, batch = x.to(self.device), batch.to(self.device)
-        x = self._encode_target_channel(x, batch)
+        # Only encode target into hidden state when mode is "initial_only".
+        # In "concat" mode the signal is injected fresh at every step; in "none" it is omitted.
+        if self.config.conditioning_mode == "initial_only":
+            x = self._encode_target_channel(x, batch)
         return x, batch
 
     def train_accumulated(self, optim_steps, accumulate_loss: bool, step_loss: bool):
@@ -211,11 +230,13 @@ class Trainer:
         if torch.is_grad_enabled():
             self.optim.zero_grad()
 
+        cond = self._make_cond(batch)
         output, step_history = self.particle_system(
             x,
             batch,
             steps=optim_steps,
             return_history=True,
+            cond=cond,
         )
 
         if accumulate_loss:
@@ -263,7 +284,8 @@ class Trainer:
         if torch.is_grad_enabled():
             self.optim.zero_grad()
 
-        output = self.particle_system(x, batch, steps=optim_steps)
+        cond = self._make_cond(batch)
+        output = self.particle_system(x, batch, steps=optim_steps, cond=cond)
         loss = compute_loss(output, self.config, batch)
         if torch.is_grad_enabled():
             loss.backward()
@@ -288,12 +310,13 @@ class Trainer:
         was_training = self.particle_system.training
         self.particle_system.eval()
         x, batch = self.get_initial_state()
+        cond = self._make_cond(batch)
         mask0 = batch == 0
         states = [x[mask0].detach().cpu().numpy()]
 
         for _ in range(steps):
             x.requires_grad_(True)        # allow state grads for Hamiltonian step
-            out = self.particle_system(x, batch, steps=1)
+            out = self.particle_system(x, batch, steps=1, cond=cond)
             states.append(out[mask0].detach().cpu().numpy())
             x = out.detach()              # break the graph so it doesn’t affect training
 
@@ -316,12 +339,13 @@ class Trainer:
             pool_indices = None
         else:
             pool_indices, x, batch = self.state_pool.sample_batch()
-            
+
+        cond = self._make_cond(batch)
         states = [x.detach().cpu().numpy()]
 
         for _ in range(steps):
             x.requires_grad_(True)        # allow state grads for Hamiltonian step
-            out = self.particle_system(x, batch, steps=1)
+            out = self.particle_system(x, batch, steps=1, cond=cond)
 
             aout = out.detach().cpu().numpy()
             states.append(aout)

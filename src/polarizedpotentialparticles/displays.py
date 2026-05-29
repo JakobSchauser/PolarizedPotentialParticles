@@ -389,33 +389,33 @@ class Displayer:
         tz = radius * np.cos(phi)
 
         n_spatial = self.trainer.config.N_spatial_dim
-        # state layout: [pos(n_spatial), polarity(n_spatial), extra_hidden...]
-        color_channel = 2 * n_spatial  # first non-polarization hidden channel
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), subplot_kw={'projection': '3d'})
 
-        def _draw(ax, pos, c_vals, azim):
+        def _draw(ax, pos, cut, azim, elev):
             ax.clear()
             ax.scatter(tx, ty, tz, s=20, alpha=0.15, c="gray")  # target shell
-            ax.scatter(pos[:, 0], pos[:, 1], pos[:, 2], s=100, alpha=0.5, c=c_vals, cmap='viridis')
+            mask = pos[:, 1] > 0 if cut else np.ones(len(pos), dtype=bool)
+            p = pos[mask]
+            dist = np.linalg.norm(p, axis=1)
+            ax.scatter(p[:, 0], p[:, 1], p[:, 2], s=100, alpha=0.7, c=dist, cmap='viridis')
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(-1.1, 1.1)
             ax.set_zlim(-1.1, 1.1)
-            ax.view_init(elev=20, azim=azim)
+            ax.view_init(elev=elev, azim=azim)
 
         def update(frame_idx):
             frame = self._state_for_display(rollout[frame_idx])
             pos = frame[:, :n_spatial]
-            if frame.shape[1] > color_channel:
-                col = frame[:, color_channel]
-                c_vals = col.detach().cpu().numpy() if isinstance(col, torch.Tensor) else np.asarray(col)
+            if isinstance(pos, torch.Tensor):
+                pos = pos.detach().cpu().numpy()
             else:
-                c_vals = "blue"
-            _draw(ax1, pos, c_vals, azim=45)
-            _draw(ax2, pos, c_vals, azim=45 + 180)
+                pos = np.asarray(pos)
+            _draw(ax1, pos, cut=False, azim=45, elev=20)   # full view
+            _draw(ax2, pos, cut=True,  azim=90, elev=20)   # cutthrough (y>0)
             return tuple()
 
-        frame_indices = self._get_frame_indices(len(rollout))
+        frame_indices = self._get_frame_indices(len(rollout))[::-1]  # final frame first
         interval = self._get_animation_interval(len(frame_indices))
         anim = FuncAnimation(fig, update, frames=frame_indices, interval=interval, blit=False)
         animation_path = self._save_animation(anim, "animation_3d_target", interval)
@@ -508,11 +508,55 @@ class Displayer:
     
     
 
+    def rollout_3d_multi_target(self, rollout: list):
+        """Animate one row per target when cfg.loss_config.multiple is set."""
+        cfg = self.trainer.config
+        multiple = cfg.loss_config.multiple or [cfg.loss_config.target]
+        n_targets = len(multiple)
+        N = cfg.N_particles
+        n_spatial = cfg.N_spatial_dim
+
+        fig, axes = plt.subplots(n_targets, 2, figsize=(12, 5 * n_targets),
+                                 subplot_kw={'projection': '3d'})
+        if n_targets == 1:
+            axes = axes[np.newaxis, :]
+
+        def _draw(ax, pos, cut, azim, elev, title):
+            ax.clear()
+            mask = pos[:, 1] > 0 if cut else np.ones(len(pos), dtype=bool)
+            p = pos[mask]
+            dist = np.linalg.norm(p, axis=1)
+            ax.scatter(p[:, 0], p[:, 1], p[:, 2], s=60, alpha=0.7, c=dist, cmap='viridis')
+            ax.set_xlim(-1.1, 1.1); ax.set_ylim(-1.1, 1.1); ax.set_zlim(-1.1, 1.1)
+            ax.view_init(elev=elev, azim=azim)
+            ax.set_title(title)
+
+        def update(frame_idx):
+            frame = np.array(rollout[frame_idx])
+            for t, target_name in enumerate(multiple):
+                particles = frame[t * N : (t + 1) * N]
+                pos = particles[:, :n_spatial]
+                _draw(axes[t, 0], pos, cut=False, azim=45, elev=20, title=f"{target_name}")
+                _draw(axes[t, 1], pos, cut=True,  azim=90, elev=20, title=f"{target_name} cutthrough (y>0)")
+            return tuple()
+
+        frame_indices = self._get_frame_indices(len(rollout))[::-1]  # final frame first
+        interval = self._get_animation_interval(len(frame_indices))
+        anim = FuncAnimation(fig, update, frames=frame_indices, interval=interval, blit=False)
+        animation_path = self._save_animation(anim, "animation_3d_multi_target", interval)
+        plt.close(fig)
+        return pn.panel(animation_path, width=1200, height=500 * n_targets)
+
     def rollout_3d_voxel_error(self, rollout: list):
         assert self.trainer.config.N_spatial_dim == 3, "rollout_3d_voxel_error requires N_spatial_dim == 3"
         cfg = self.trainer.config
+        _target = (
+            cfg.loss_config.multiple[0]
+            if cfg.loss_config.multiple is not None
+            else cfg.loss_config.target
+        )
         target_grid = get_cached_target_grid(
-            cfg.loss_config.target,
+            _target,
             device="cpu",
             dtype=torch.float32,
             sphere_target_radius=cfg.loss_config.sphere_target_radius,
@@ -569,6 +613,8 @@ class Displayer:
             self.rollout_3d_with_target(rollout),
             self.rollout_3d_voxel_error(rollout),
         ]
+        if self.trainer.config.loss_config.multiple is not None:
+            to_display.append(self.rollout_3d_multi_target(rollout))
         return self.display_multiple(to_display)
 
     def dashboard(self, rollout, losses):
